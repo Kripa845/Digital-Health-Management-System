@@ -1,0 +1,292 @@
+{
+  "_about": "Self-curated symptom-to-department mapping (rule-based knowledge base). Weights: 3=defining, 2=related, 1=generic.",
+  "department_rules": {
+    "Cardiology": {
+      "heart": 3,
+      "cardiac": 3,
+      "chest pain": 3,
+      "palpitation": 3,
+      "hypertension": 2,
+      "bp": 2,
+      "cholesterol": 2,
+      "valve": 2,
+      "breathless": 1,
+      "heart attack": 3,
+      "arrhythmia": 2,
+      "cardio": 2
+    },
+    "Dermatology": {
+      "skin": 2,
+      "rash": 2,
+      "eczema": 2,
+      "dermatitis": 2,
+      "acne": 1,
+      "itching": 1,
+      "hair": 1,
+      "nail": 1,
+      "allergy": 1,
+      "spot": 1,
+      "dry skin": 1,
+      "mole": 2,
+      "wart": 2
+    },
+    "Neurology": {
+      "headache": 3,
+      "migraine": 3,
+      "brain": 2,
+      "nerve": 2,
+      "seizure": 3,
+      "epilepsy": 2,
+      "numbness": 2,
+      "stroke": 3,
+      "dizziness": 2,
+      "memory": 1,
+      "confusion": 2,
+      "tremor": 2
+    },
+    "Pediatrics": {
+      "child": 3,
+      "baby": 3,
+      "infant": 3,
+      "kids": 2,
+      "pediatric": 2,
+      "peds": 2,
+      "vaccine": 1,
+      "growth": 1,
+      "bedwetting": 1,
+      "newborn": 3
+    },
+    "Orthopedics": {
+      "bone": 2,
+      "fracture": 3,
+      "joint": 2,
+      "knee": 2,
+      "spine": 2,
+      "arthritis": 2,
+      "neck pain": 2,
+      "back pain": 2,
+      "muscle": 1,
+      "ortho": 1,
+      "sprain": 1,
+      "shoulder": 2,
+      "hip": 2,
+      "elbow": 2
+    },
+    "Gynecology": {
+      "menstrual": 3,
+      "pregnancy": 3,
+      "pregnant": 3,
+      "uterus": 2,
+      "ovary": 2,
+      "vaginal": 2,
+      "cervical": 2,
+      "fertility": 2,
+      "period": 2,
+      "pcos": 2,
+      "menopause": 2
+    },
+    "General Medicine": {
+      "fever": 2,
+      "cold": 2,
+      "cough": 2,
+      "flu": 2,
+      "headache": 1,
+      "body ache": 1,
+      "weakness": 1,
+      "stomach": 1,
+      "diarrhea": 1,
+      "vomiting": 1,
+      "infection": 1,
+      "fatigue": 1,
+      "nausea": 1,
+      "chills": 1
+    },
+    "ENT": {
+      "ear": 2,
+      "nose": 2,
+      "throat": 2,
+      "sinus": 2,
+      "hearing": 2,
+      "tonsil": 2,
+      "earache": 2,
+      "sore throat": 2,
+      "nosebleed": 1,
+      "snore": 1,
+      "tinnitus": 2
+    },
+    "Ophthalmology": {
+      "eye": 3,
+      "vision": 3,
+      "glasses": 2,
+      "cataract": 2,
+      "glaucoma": 2,
+      "retina": 2,
+      "conjunctivitis": 2,
+      "blurry": 2,
+      "red eye": 2,
+      "blindness": 3,
+      "dry eye": 1
+    },
+    "Psychiatry": {
+      "anxiety": 3,
+      "depression": 3,
+      "stress": 2,
+      "sleep": 1,
+      "insomnia": 2,
+      "panic": 2,
+      "mental": 2,
+      "trauma": 2,
+      "mood": 1,
+      "schizophrenia": 3,
+      "bipolar": 3
+    },
+    "Oncology": {
+      "cancer": 3,
+      "tumor": 3,
+      "chemo": 3,
+      "oncology": 2,
+      "radiation": 2,
+      "metastasis": 2,
+      "malignancy": 3,
+      "biopsy": 2,
+      "carcinoma": 2
+    },
+    "Urology": {
+      "urinary": 3,
+      "kidney stone": 3,
+      "bladder": 2,
+      "prostate": 2,
+      "urine": 1,
+      "incontinence": 2,
+      "erectile": 2,
+      "uti": 2
+    },
+    "Gastroenterology": {
+      "abdomen": 2,
+      "liver": 2,
+      "stomach": 2,
+      "intestine": 2,
+      "diarrhea": 2,
+      "gastric": 2,
+      "ibd": 2,
+      "colitis": 2,
+      "reflux": 2,
+      "gerd": 2,
+      "bowel": 2
+    },
+    "Nephrology": {
+      "kidney": 3,
+      "renal": 3,
+      "dialysis": 3,
+      "creatinine": 2,
+      "urine protein": 2,
+      "hemodialysis": 2,
+      "nephrotic": 2
+    },
+    "Endocrinology": {
+      "diabetes": 3,
+      "thyroid": 3,
+      "hormone": 2,
+      "insulin": 2,
+      "hypothyroid": 2,
+      "hyperthyroid": 2,
+      "adrenal": 2,
+      "pituitary": 2,
+      "metabolism": 2
+    },
+    "Pulmonology": {
+      "lung": 3,
+      "breath": 2,
+      "asthma": 3,
+      "cough": 2,
+      "respiratory": 2,
+      "pneumonia": 2,
+      "bronchitis": 2,
+      "copd": 2,
+      "tuberculosis": 2,
+      "tb": 2,
+      "oxygen": 2
+    },
+    "Emergency Medicine": {
+      "emergency": 3,
+      "accident": 3,
+      "trauma": 3,
+      "bleeding": 3,
+      "unconscious": 3,
+      "collapse": 3,
+      "shock": 2,
+      "poison": 2,
+      "burn": 2,
+      "fracture": 2
+    },
+    "Family Medicine": {
+      "checkup": 2,
+      "routine": 2,
+      "annual": 1,
+      "family": 2,
+      "preventive": 2,
+      "screening": 2,
+      "vaccination": 1,
+      "general health": 2,
+      "wellness": 2
+    },
+    "Dentistry": {
+      "tooth": 3,
+      "teeth": 2,
+      "dental": 2,
+      "gum": 2,
+      "cavity": 2,
+      "braces": 2,
+      "root canal": 2,
+      "extraction": 2,
+      "oral": 2,
+      "mouth": 1
+    },
+    "Radiology": {
+      "x-ray": 2,
+      "mri": 2,
+      "ct": 2,
+      "scan": 2,
+      "imaging": 2,
+      "ultrasound": 2,
+      "radiology": 2,
+      "contrast": 1
+    },
+    "Pathology": {
+      "blood test": 3,
+      "biopsy": 2,
+      "lab": 2,
+      "pathology": 2,
+      "specimen": 2,
+      "culture": 2,
+      "urine test": 2,
+      "report": 1
+    }
+  },
+  "department_equivalences": {
+    "fracture": [
+      "Orthopedics",
+      "Emergency Medicine"
+    ],
+    "bleeding": [
+      "Emergency Medicine",
+      "General Medicine"
+    ],
+    "cough": [
+      "Pulmonology",
+      "General Medicine"
+    ],
+    "stomach": [
+      "Gastroenterology",
+      "General Medicine"
+    ],
+    "kidney": [
+      "Nephrology",
+      "General Medicine"
+    ],
+    "lung": [
+      "Pulmonology",
+      "General Medicine"
+    ]
+  }
+}
