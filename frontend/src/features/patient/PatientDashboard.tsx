@@ -138,7 +138,7 @@ export function PatientDashboard() {
       </div>
 
       {/* ── Health Vitals ── */}
-      <HealthVitalsCard patient={livePatient} />
+      {livePatient && <HealthVitalsCard patient={livePatient} />}
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         {/* Upcoming appointments */}

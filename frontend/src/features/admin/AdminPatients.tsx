@@ -173,15 +173,15 @@ function PatientFormDialog({
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="First name" required error={errors.first_name}>
               <Input value={form.first_name} onChange={(e) => set('first_name', formatName(e.target.value))}
-                autoCapitalize="words" placeholder="Rojina" maxLength={50} />
+                autoCapitalize="words" maxLength={50} />
             </Field>
             <Field label="Middle name" error={errors.middle_name}>
               <Input value={form.middle_name} onChange={(e) => set('middle_name', formatName(e.target.value))}
-                autoCapitalize="words" placeholder="Optional" maxLength={50} />
+                autoCapitalize="words" maxLength={50} />
             </Field>
             <Field label="Last name" required error={errors.last_name}>
               <Input value={form.last_name} onChange={(e) => set('last_name', formatName(e.target.value))}
-                autoCapitalize="words" placeholder="Adhikari" maxLength={50} />
+                autoCapitalize="words" maxLength={50} />
             </Field>
           </div>
 

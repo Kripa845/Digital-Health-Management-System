@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
-  ScanLine, Camera, CameraOff, KeyRound, ShieldCheck, Lock, ArrowRight, Loader2,
+  ScanLine, Camera, CameraOff, KeyRound, ShieldCheck, Lock, ArrowRight, Loader2, AlertCircle,
 } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -11,7 +11,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input, Textarea } from '@/components/ui/input'
 import { Field } from '@/components/ui/label'
 import { PageHeader, InfoRow, SectionTitle } from '@/components/patterns'
-import { AccessStatusBadge } from '@/components/status-badge'
 import { patientService, accessRequestService } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import type { Patient } from '@/lib/types'
@@ -35,8 +34,10 @@ interface GeneralPatient {
 }
 
 type ScanResult =
-  | { assigned: true; access: 'FULL'; request_status: string | null; patient: Patient }
-  | { assigned: false; access: 'GENERAL'; request_status: string | null; patient: GeneralPatient }
+  | { access: 'FULL'; patient: Patient }
+  | { access: 'PENDING'; patient: GeneralPatient; message: string }
+  | { access: 'DECLINED'; patient: GeneralPatient; message: string }
+  | { access: 'GENERAL'; patient: GeneralPatient; message?: string }
 
 function extractUuid(text: string): string | null {
   const m = text.match(UUID_RE)
@@ -58,6 +59,8 @@ export function DoctorScan() {
     onSuccess: (data) => {
       setResult(data)
       if (data.access === 'FULL') toast.success('Access granted — you are assigned to this patient.')
+      else if (data.access === 'PENDING') toast.info('Access request sent to the admin team.')
+      else if (data.access === 'DECLINED') toast.error('Your access request was declined.')
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Could not resolve the scanned card.'),
   })
@@ -67,7 +70,13 @@ export function DoctorScan() {
       accessRequestService.create(patientId, reason || undefined),
     onSuccess: () => {
       toast.success('Access request sent to the admin team.')
-      setResult((prev) => (prev && prev.access === 'GENERAL' ? { ...prev, request_status: 'PENDING' } : prev))
+      setResult((prev) => {
+        if (!prev) return prev
+        if (prev.access === 'GENERAL' || prev.access === 'DECLINED') {
+          return { ...prev, access: 'PENDING', message: 'Your access request is awaiting admin approval.' }
+        }
+        return prev
+      })
       setReason('')
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Could not send the access request.'),
@@ -260,19 +269,27 @@ function FullResult({ patient: p }: { patient: Patient }) {
 function GeneralResult({
   result, reason, setReason, onRequest, requesting,
 }: {
-  result: Extract<ScanResult, { access: 'GENERAL' }>
+  result: Extract<ScanResult, { access: 'GENERAL' | 'PENDING' | 'DECLINED' }>
   reason: string
   setReason: (v: string) => void
   onRequest: () => void
   requesting: boolean
 }) {
   const p = result.patient
-  const pending = result.request_status === 'PENDING'
+  const isPending = result.access === 'PENDING'
+  const isDeclined = result.access === 'DECLINED'
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
-        <Lock className="size-4 shrink-0" />
-        <p>General profile only — you are not assigned, so medical records are hidden.</p>
+      <div className={`flex items-center gap-2.5 rounded-[var(--radius-md)] border p-3 text-sm ${
+        isPending ? 'border-info/30 bg-info-soft text-info' :
+        isDeclined ? 'border-danger/30 bg-danger-soft text-danger' :
+        'border-warning/30 bg-warning-soft text-warning'
+      }`}>
+        {isPending ? <ShieldCheck className="size-4 shrink-0" /> :
+         isDeclined ? <AlertCircle className="size-4 shrink-0" /> :
+         <Lock className="size-4 shrink-0" />}
+        <p className="text-pretty">{result.message || 'General profile only — medical records are hidden.'}</p>
       </div>
       <div className="text-center">
         <p className="text-lg font-semibold">{p.first_name} {p.middle_name ? `${p.middle_name} ` : ''}{p.last_name}</p>
@@ -285,18 +302,13 @@ function GeneralResult({
       </dl>
       <InfoRow label="Emergency contact" value={p.emergency_contact} mono />
 
-      {result.request_status && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Access request:</span>
-          <AccessStatusBadge status={result.request_status} />
-        </div>
-      )}
-
-      {pending ? (
+      {isPending && (
         <div className="rounded-[var(--radius-md)] border border-border bg-surface-2/50 p-3 text-center text-sm text-muted-foreground">
           Your access request is awaiting admin approval.
         </div>
-      ) : (
+      )}
+
+      {!isPending && (
         <div className="space-y-3">
           <Field label="Reason for access" htmlFor="access-reason" hint="Optional — helps the admin review your request.">
             <Textarea id="access-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)}

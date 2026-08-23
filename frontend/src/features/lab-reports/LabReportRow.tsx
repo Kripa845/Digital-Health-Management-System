@@ -82,10 +82,6 @@ export function LabReportRow({ report, patientId, queryScope = 'patient', canDel
       toast.error(err?.response?.data?.detail || 'Could not delete the report.'),
   })
 
-  const hasFields =
-    (report.detected_fields?.length ?? 0) > 0 ||
-    (report.fields?.length ?? 0) > 0
-
   return (
     <Card className="overflow-hidden">
       {/* Main row */}

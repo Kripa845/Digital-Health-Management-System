@@ -238,7 +238,11 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         if user.role == 'ADMIN':
             return qs.all()
         elif user.role == 'DOCTOR':
-            return qs.filter(doctor=user)
+            return qs.filter(
+                doctor=user,
+                patient__access_requests__doctor__user=user,
+                patient__access_requests__status='APPROVED',
+            ).distinct()
         elif user.role == 'PATIENT':
             return qs.filter(patient__user=user)
         return Prescription.objects.none()

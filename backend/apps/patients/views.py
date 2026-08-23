@@ -13,7 +13,8 @@ from rest_framework.response import Response
 
 from apps.audit.utils import log_activity
 from apps.patients.models import Patient
-from apps.patients.serializers import PatientSerializer
+from apps.patients.serializers import PatientSerializer, PublicPatientSerializer
+from apps.notifications.models import Notification
 from apps.documents.models import Document
 from apps.documents.serializers import DocumentSerializer
 from apps.users.permissions import IsAdmin
@@ -151,30 +152,8 @@ class PatientViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        photo_url = (
-            request.build_absolute_uri(patient.photo.url)
-            if patient.photo else None
-        )
-        return Response({
-            'uuid': str(patient.uuid_token),
-            'patient_id': patient.patient_id,
-            'first_name': patient.first_name,
-            'middle_name': patient.middle_name,
-            'last_name': patient.last_name,
-            'photo': photo_url,
-            'dob': str(patient.dob),
-            'age': patient.age,
-            'gender': patient.gender,
-            'blood_group': patient.blood_group,
-            'phone': patient.phone,
-            'emergency_contact': patient.emergency_contact,
-            'email': patient.email,
-            'address': patient.address,
-            'height': str(patient.height),
-            'weight': str(patient.weight),
-            'allergies': patient.allergies,
-            'status': patient.status,
-        }, status=status.HTTP_200_OK)
+        serializer = PublicPatientSerializer(patient, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     # QR code PNG image
     @action(detail=True, methods=['get'], url_path='qr')
@@ -234,19 +213,35 @@ class PatientViewSet(viewsets.ModelViewSet):
         if not is_admin and not doctor:
             return Response({'detail': 'Only clinical staff can scan patient cards.'}, status=status.HTTP_403_FORBIDDEN)
 
-        assigned = False
-        request_status = None
-        if doctor:
-            assigned = DoctorAssignment.objects.filter(doctor=doctor, patient=patient, status='Active').exists()
-            if not assigned:
-                ar = AccessRequest.objects.filter(doctor=doctor, patient=patient).order_by('-created_at').first()
-                request_status = ar.status if ar else None
+        # Admin always gets full access
+        if is_admin:
+            data = PatientSerializer(patient, context={'request': request}).data
+            log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
+            return Response({'access': 'FULL', 'patient': data})
+
+        # Doctor workflow
+        assigned = DoctorAssignment.objects.filter(doctor=doctor, patient=patient, status='Active').exists()
+
+        request_obj = None
+        if assigned:
+            request_obj = AccessRequest.objects.filter(doctor=doctor, patient=patient).order_by('-created_at').first()
+            if not request_obj:
+                request_obj = AccessRequest.objects.create(
+                    doctor=doctor, patient=patient, reason='QR scan initiated'
+                )
+                for admin in User.objects.filter(role='ADMIN', is_active=True):
+                    Notification.objects.create(
+                        receiver=admin, role='ADMIN',
+                        title='Patient Access Request',
+                        message=f"Dr. {doctor.user.get_full_name() or doctor.user.username} requested access to patient {patient.patient_id} via QR scan.",
+                    )
+                log_activity(user, 'ACCESS_REQUEST', f"Requested access to patient {patient.patient_id} via QR scan.", request)
 
         log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
 
-        if is_admin or assigned:
+        if assigned and request_obj and request_obj.status == 'APPROVED':
             data = PatientSerializer(patient, context={'request': request}).data
-            return Response({'assigned': True, 'access': 'FULL', 'request_status': request_status, 'patient': data})
+            return Response({'access': 'FULL', 'patient': data})
 
         general = {
             'id': patient.id,
@@ -262,7 +257,22 @@ class PatientViewSet(viewsets.ModelViewSet):
             'emergency_contact': patient.emergency_contact,
             'status': patient.status,
         }
-        return Response({'assigned': False, 'access': 'GENERAL', 'request_status': request_status, 'patient': general})
+
+        response_data = {'access': 'GENERAL', 'patient': general}
+
+        if assigned:
+            if request_obj and request_obj.status == 'PENDING':
+                response_data['access'] = 'PENDING'
+                response_data['message'] = 'Your access request is awaiting admin approval.'
+            elif request_obj and request_obj.status == 'DECLINED':
+                response_data['access'] = 'DECLINED'
+                response_data['message'] = 'Your access request was declined. Only basic information is available.'
+            else:
+                response_data['message'] = 'You are not assigned to this patient. Full medical access requires authorization.'
+        else:
+            response_data['message'] = 'You are not assigned to this patient. Full medical access requires authorization.'
+
+        return Response(response_data)
 
     # Toggle Active / Inactive
     @action(

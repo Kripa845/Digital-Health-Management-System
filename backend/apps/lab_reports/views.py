@@ -1,19 +1,3 @@
-"""
-Views for the lab_reports app.
-
-LabReportViewSet
-  POST   /api/v1/lab-reports/          – upload + auto-process
-  GET    /api/v1/lab-reports/          – list (filtered by patient/role)
-  GET    /api/v1/lab-reports/{id}/     – retrieve single report + fields
-  DELETE /api/v1/lab-reports/{id}/     – delete (Patient own ADDITIONAL, Admin any)
-  GET    /api/v1/lab-reports/{id}/download/ – download original file
-  POST   /api/v1/lab-reports/{id}/reprocess/ – re-run OCR + CDSA (Admin only)
-
-Permissions
-  - Patient   : upload own reports, list/retrieve own, delete own, download own
-  - Admin     : upload for any patient, full list, retrieve any, delete any, reprocess
-  - Doctor    : list/retrieve for assigned patients only (read-only)
-"""
 
 import logging
 
@@ -30,23 +14,15 @@ from apps.lab_reports.extractor import extract_medical_fields
 from apps.lab_reports.models import LabReport
 from apps.lab_reports.ocr_service import extract_text_from_file
 from apps.lab_reports.serializers import LabReportSerializer, LabReportUploadSerializer
+from apps.doctors.models import AccessRequest
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Permission class
-# ---------------------------------------------------------------------------
+
 
 class LabReportPermission(permissions.BasePermission):
-    """
-    Custom permission for LabReportViewSet.
-
-    create   – Patient (own) or Admin (any patient)
-    list/retrieve/download – Patient (own), Admin (any), Doctor (assigned)
-    destroy  – Patient (own), Admin (any)
-    reprocess – Admin only
-    """
+  
 
     def has_permission(self, request, view):
         user = request.user
@@ -80,19 +56,20 @@ class LabReportPermission(permissions.BasePermission):
             return owned
 
         if user.role == 'DOCTOR':
-            # Read-only access for actively assigned patients
             if view.action in ('retrieve', 'download'):
-                return obj.patient.assignments.filter(
+                has_assignment = obj.patient.assignments.filter(
                     doctor__user=user, status='Active'
+                ).exists()
+                if not has_assignment:
+                    return False
+                return AccessRequest.objects.filter(
+                    doctor__user=user, patient=obj.patient, status='APPROVED'
                 ).exists()
             return False
 
         return False
 
 
-# ---------------------------------------------------------------------------
-# ViewSet
-# ---------------------------------------------------------------------------
 
 class LabReportViewSet(viewsets.ModelViewSet):
     serializer_class = LabReportSerializer
@@ -101,7 +78,7 @@ class LabReportViewSet(viewsets.ModelViewSet):
     filterset_fields = ['patient', 'status']
     http_method_names = ['get', 'post', 'delete', 'head', 'options']
 
-    # --- queryset scoping ---------------------------------------------------
+    
 
     def get_queryset(self):
         user = self.request.user
@@ -120,23 +97,25 @@ class LabReportViewSet(viewsets.ModelViewSet):
             return base.filter(
                 patient__assignments__doctor__user=user,
                 patient__assignments__status='Active',
+                patient__access_requests__doctor__user=user,
+                patient__access_requests__status='APPROVED',
             ).distinct()
 
         return LabReport.objects.none()
 
-    # --- serializer selection -----------------------------------------------
+    
 
     def get_serializer_class(self):
         if self.action == 'create':
             return LabReportUploadSerializer
         return LabReportSerializer
 
-    # --- CREATE: upload + OCR pipeline --------------------------------------
+    
 
     def create(self, request, *args, **kwargs):
         user = request.user
 
-        # For PATIENT role, force patient to their own profile
+       
         data = request.data.copy()
         if user.role == 'PATIENT':
             patient_profile = getattr(user, 'patient_profile', None)
@@ -150,9 +129,6 @@ class LabReportViewSet(viewsets.ModelViewSet):
         upload_ser = LabReportUploadSerializer(data=data)
         upload_ser.is_valid(raise_exception=True)
 
-        # Check for duplicate: same patient + same filename + same size within last 24h.
-        # Only block if a successfully completed (or still-processing) record exists.
-        # FAILED records are ignored so the user can simply retry the same file.
         from datetime import timedelta
         patient_obj = upload_ser.validated_data['patient']
         file_obj = upload_ser.validated_data['file']
@@ -169,7 +145,7 @@ class LabReportViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Save the report record in PROCESSING state
+        
         lab_report = upload_ser.save(
             uploaded_by=user,
             status=LabReport.Status.PROCESSING,
@@ -183,7 +159,7 @@ class LabReportViewSet(viewsets.ModelViewSet):
             request,
         )
 
-        # --- OCR pipeline ---------------------------------------------------
+        
         try:
             ocr_text = extract_text_from_file(lab_report.file)
         except RuntimeError as exc:
@@ -208,11 +184,11 @@ class LabReportViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # Store raw OCR text (read-only reference, never fed back to the file)
+       
         lab_report.ocr_text = ocr_text
         lab_report.save(update_fields=['ocr_text'])
 
-        # --- Extract medical fields -----------------------------------------
+       
         try:
             extracted = extract_medical_fields(ocr_text)
         except Exception as exc:
@@ -225,21 +201,24 @@ class LabReportViewSet(viewsets.ModelViewSet):
             )
 
         if not extracted:
-            # OCR succeeded but no recognisable medical values found – still mark complete
+            
             lab_report.status = LabReport.Status.COMPLETED
             lab_report.processed_at = timezone.now()
             lab_report.save(update_fields=['status', 'processed_at'])
             result_ser = LabReportSerializer(lab_report, context={'request': request})
             return Response(
                 {
-                    'detail': 'Report processed but no standard medical values were detected. '
+                    'detail': 'OCR succeeded but no standard medical values were detected. '
                               'The original file has been stored.',
+                    'ocr_succeeded': True,
+                    'fields_detected': False,
+                    'ocr_text_length': len(ocr_text),
                     **result_ser.data,
                 },
                 status=status.HTTP_201_CREATED,
             )
 
-        # --- Run CDSA -------------------------------------------------------
+        
         try:
             processing_result = run_cdsa(lab_report, extracted)
         except Exception as exc:
@@ -259,16 +238,23 @@ class LabReportViewSet(viewsets.ModelViewSet):
             f'{lab_report.patient.patient_id}. '
             f'Detected: {processing_result.detected_count}, '
             f'Updated: {processing_result.updated_count}, '
-            f'Unchanged: {processing_result.unchanged_count}.',
+            f'Unchanged: {processing_result.unchanged_count}, '
+            f'Needs review: {processing_result.needs_review_count}.',
             request,
         )
 
-        # Refresh from DB to get accurate counts
         lab_report.refresh_from_db()
         result_ser = LabReportSerializer(lab_report, context={'request': request})
-        return Response(result_ser.data, status=status.HTTP_201_CREATED)
+        response_data = result_ser.data
+        response_data['processing_summary'] = {
+            'detected': [f.field_name for f in processing_result.detected_fields],
+            'updated': [f.field_name for f in processing_result.updated_fields],
+            'unchanged': [f.field_name for f in processing_result.unchanged_fields],
+            'needs_review': [f.field_name for f in processing_result.needs_review_fields],
+        }
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
-    # --- custom action: download original file ------------------------------
+ 
 
     @action(detail=True, methods=['get'], url_path='download')
     def download(self, request, pk=None):
@@ -281,7 +267,7 @@ class LabReportViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="{lab_report.name}"'
         return response
 
-    # --- custom action: reprocess (Admin only) ------------------------------
+ 
 
     @action(detail=True, methods=['post'], url_path='reprocess')
     def reprocess(self, request, pk=None):
@@ -323,9 +309,17 @@ class LabReportViewSet(viewsets.ModelViewSet):
         )
 
         lab_report.refresh_from_db()
-        return Response(LabReportSerializer(lab_report, context={'request': request}).data)
+        result_ser = LabReportSerializer(lab_report, context={'request': request})
+        response_data = result_ser.data
+        response_data['processing_summary'] = {
+            'detected': [f.field_name for f in processing_result.detected_fields],
+            'updated': [f.field_name for f in processing_result.updated_fields],
+            'unchanged': [f.field_name for f in processing_result.unchanged_fields],
+            'needs_review': [f.field_name for f in processing_result.needs_review_fields],
+        }
+        return Response(response_data)
 
-    # --- destroy with audit -------------------------------------------------
+
 
     def perform_destroy(self, instance):
         log_activity(

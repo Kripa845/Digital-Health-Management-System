@@ -62,6 +62,26 @@ export interface Patient {
   cholesterol_hdl?: string | number | null
   cholesterol_ldl?: string | number | null
   triglycerides?: string | number | null
+  heart_rate?: number | null
+  spo2?: string | number | null
+  temperature?: string | number | null
+  hba1c?: string | number | null
+  serum_creatinine?: string | number | null
+  blood_urea?: string | number | null
+  uric_acid?: string | number | null
+  ssgpt_alt?: string | number | null
+  ssgot_ast?: string | number | null
+  bilirubin_total?: string | number | null
+  tsh?: string | number | null
+  t3?: string | number | null
+  t4?: string | number | null
+  sodium?: string | number | null
+  potassium?: string | number | null
+  wbc_count?: string | number | null
+  rbc_count?: string | number | null
+  platelet_count?: string | number | null
+  hematocrit?: string | number | null
+  esr?: string | number | null
   // ─────────────────────────────────────────────────────────────────────────
   allergies?: string | null
   current_medication?: string | null

@@ -1,10 +1,3 @@
-"""
-Serializers for the lab_reports app.
-
-LabReportFieldSerializer  – one extracted medical parameter row
-LabReportSerializer       – the report itself, including nested fields and summary
-LabReportUploadSerializer – write-only, used only for the upload POST
-"""
 
 from rest_framework import serializers
 from apps.lab_reports.models import LabReport, LabReportField
@@ -27,7 +20,7 @@ class LabReportFieldSerializer(serializers.ModelSerializer):
 
 
 class LabReportSerializer(serializers.ModelSerializer):
-    """Full read serializer – returned after processing and on retrieve/list."""
+
 
     fields = LabReportFieldSerializer(many=True, read_only=True)
 
@@ -35,7 +28,7 @@ class LabReportSerializer(serializers.ModelSerializer):
     patient_id_code = serializers.CharField(source='patient.patient_id', read_only=True)
     uploaded_by_name = serializers.SerializerMethodField(read_only=True)
 
-    # Grouped convenience lists (computed from nested 'fields')
+    
     detected_fields = serializers.SerializerMethodField(read_only=True)
     updated_fields = serializers.SerializerMethodField(read_only=True)
     unchanged_fields = serializers.SerializerMethodField(read_only=True)
@@ -103,11 +96,7 @@ class LabReportSerializer(serializers.ModelSerializer):
 
 
 class LabReportUploadSerializer(serializers.ModelSerializer):
-    """
-    Write-only serializer used for the upload POST.
-    Only 'patient', 'file', and 'name' are accepted from the client.
-    Everything else is filled in by the view or the CDSA pipeline.
-    """
+  
 
     class Meta:
         model = LabReport

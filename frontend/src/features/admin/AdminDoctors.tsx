@@ -28,7 +28,6 @@ import {
   CredentialRow, tableHeadClass,
 } from './admin-common'
 
-// ── Availability schedule editor ──────────────────────────────────────
 type DaySchedule = { closed: boolean; start: string; end: string }
 type ScheduleState = Record<string, DaySchedule>
 
@@ -105,7 +104,7 @@ function ScheduleEditor({ value, onChange }: { value: ScheduleState; onChange: (
   )
 }
 
-// ── Doctor form ───────────────────────────────────────────────────────
+
 type DoctorForm = {
   first_name: string
   last_name: string
@@ -235,11 +234,11 @@ function DoctorFormDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="First name" required error={errors.first_name}>
               <Input value={form.first_name} onChange={(e) => set('first_name', formatName(e.target.value))}
-                autoCapitalize="words" placeholder="Rojina" maxLength={50} />
+                autoCapitalize="words" maxLength={50} />
             </Field>
             <Field label="Last name" required error={errors.last_name}>
               <Input value={form.last_name} onChange={(e) => set('last_name', formatName(e.target.value))}
-                autoCapitalize="words" placeholder="Adhikari" maxLength={50} />
+                autoCapitalize="words" maxLength={50} />
             </Field>
           </div>
 
@@ -247,7 +246,7 @@ function DoctorFormDialog({
             <Field label="NMC number" required error={errors.license_number}
               hint={errors.license_number ? undefined : 'Nepal Medical Council registration number'}>
               <Input value={form.license_number} onChange={(e) => set('license_number', formatNmc(e.target.value))}
-                placeholder="NMC-12345" maxLength={20} />
+                maxLength={20} />
             </Field>
             <Field label="Department" required>
               <SimpleSelect value={form.department} onValueChange={(v) => set('department', v)} options={DEPARTMENTS as unknown as string[]} />

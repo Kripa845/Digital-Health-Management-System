@@ -156,7 +156,6 @@ export function LabReportUploadDialog({
     uploadMut.mutate()
   }
 
-  const isProcessing = step === 'uploading'
   const canClose = step === 'form' || step === 'done' || step === 'error'
 
   return (

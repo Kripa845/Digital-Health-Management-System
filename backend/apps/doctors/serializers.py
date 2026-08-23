@@ -114,8 +114,7 @@ class DoctorSerializer(serializers.ModelSerializer):
         return value
 
     def validate_license_number(self, value):
-        # NMC (Nepal Medical Council) registration number: a numeric registration
-        # code, optionally written with an "NMC" prefix. Normalise to "NMC-<digits>".
+       
         raw = (value or '').strip().upper()
         m = re.match(r'^(?:NMC[-\s]?(?:NO\.?\s*)?)?(\d{1,6})$', raw)
         if not m:

@@ -13,10 +13,6 @@ def validate_lab_report_file(value):
 
 
 class LabReport(models.Model):
-    """
-    Stores an uploaded laboratory report and records its OCR processing results.
-    The original file is never modified – it is read-only source material.
-    """
 
     class Status(models.TextChoices):
         PENDING = 'PENDING', 'Pending'
@@ -29,7 +25,7 @@ class LabReport(models.Model):
         on_delete=models.CASCADE,
         related_name='lab_reports',
     )
-    # Original file – stored exactly as uploaded, never rewritten.
+   
     file = models.FileField(
         upload_to='lab_reports/',
         validators=[validate_lab_report_file],
@@ -47,7 +43,7 @@ class LabReport(models.Model):
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
-    # Processing state
+   
     status = models.CharField(
         max_length=12,
         choices=Status.choices,
@@ -56,10 +52,10 @@ class LabReport(models.Model):
     )
     error_message = models.TextField(blank=True)
 
-    # Raw OCR text – read-only reference copy
+    
     ocr_text = models.TextField(blank=True)
 
-    # Summary counts (denormalised for fast API responses)
+    
     detected_count = models.PositiveSmallIntegerField(default=0)
     updated_count = models.PositiveSmallIntegerField(default=0)
     unchanged_count = models.PositiveSmallIntegerField(default=0)
@@ -86,25 +82,20 @@ class LabReport(models.Model):
 
 
 class LabReportField(models.Model):
-    """
-    Represents a single medical parameter extracted from a lab report.
-    Tracks what was found, what existed before, whether it was updated, and
-    the unit / reference range so clinicians have full context.
-    """
-
+  
     class ChangeStatus(models.TextChoices):
-        INSERTED = 'INSERTED', 'Inserted'   # no prior value existed
-        UPDATED = 'UPDATED', 'Updated'       # prior value differed
-        UNCHANGED = 'UNCHANGED', 'Unchanged' # prior value identical
+        INSERTED = 'INSERTED', 'Inserted'   
+        UPDATED = 'UPDATED', 'Updated'       
+        UNCHANGED = 'UNCHANGED', 'Unchanged' 
 
     report = models.ForeignKey(
         LabReport,
         on_delete=models.CASCADE,
         related_name='fields',
     )
-    # Human-readable parameter name (e.g. "Hemoglobin", "Blood Pressure")
+
     field_name = models.CharField(max_length=100)
-    # Internal Patient model attribute this maps to, if any (e.g. "weight")
+    
     patient_field = models.CharField(max_length=100, blank=True)
 
     extracted_value = models.CharField(max_length=255)

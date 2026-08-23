@@ -173,14 +173,14 @@ class AdminDashboardStatsView(APIView):
         active_users = User.objects.filter(is_active=True).count()
         inactive_users = User.objects.filter(is_active=False).count()
 
-        # Recent Patients and Doctors
+        
         recent_patients = Patient.objects.order_by('-registration_date')[:5]
         recent_doctors = Doctor.objects.order_by('-registration_date')[:5]
 
         recent_patients_serialized = PatientSerializer(recent_patients, many=True, context={'request': request}).data
         recent_doctors_serialized = DoctorSerializer(recent_doctors, many=True, context={'request': request}).data
 
-        # Registration charts: registrations in last 7 days
+        
         chart_data = []
         for i in range(6, -1, -1):
             day = today - timedelta(days=i)

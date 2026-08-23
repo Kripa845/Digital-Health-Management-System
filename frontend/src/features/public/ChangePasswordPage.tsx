@@ -50,18 +50,18 @@ export function ChangePasswordPage() {
       <form onSubmit={submit} className="mt-6 space-y-4">
         <Field label="Current password">
           <div className="relative">
-            <Input type={show ? 'text' : 'password'} value={oldPw} onChange={(e) => setOldPw(e.target.value)} placeholder="••••••••" className="pr-10" autoComplete="current-password" />
+            <Input type={show ? 'text' : 'password'} value={oldPw} onChange={(e) => setOldPw(e.target.value)} className="pr-10" autoComplete="current-password" />
             <button type="button" onClick={() => setShow((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
               {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
         </Field>
         <Field label="New password">
-          <Input type={show ? 'text' : 'password'} value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" />
+          <Input type={show ? 'text' : 'password'} value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" />
         </Field>
         <PasswordStrength value={newPw} />
         <Field label="Confirm new password" error={confirm && confirm !== newPw ? 'Passwords do not match' : undefined}>
-          <Input type={show ? 'text' : 'password'} value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Re-enter new password" autoComplete="new-password" />
+          <Input type={show ? 'text' : 'password'} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
         </Field>
         <Button type="submit" loading={loading} size="lg" className="w-full">Update password <ArrowRight className="size-4" /></Button>
       </form>

@@ -1,10 +1,7 @@
 /**
  * HealthVitalsCard
  * ─────────────────
- * Displays ALL patient vitals on the dashboard — always visible, regardless of
- * whether values have been recorded yet.  Empty fields show a "—" placeholder
- * with a subtle "Upload a lab report to fill this in" prompt.
- *
+ * Displays essential patient vitals on the dashboard.
  * Values are auto-updated whenever a lab report is processed via OCR / CDSA.
  */
 
@@ -17,8 +14,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { Patient } from '@/lib/types'
 
-// ─── value helpers ───────────────────────────────────────────────────────────
-
 function numVal(v: string | number | null | undefined): number | null {
   if (v === null || v === undefined || v === '') return null
   const n = Number(v)
@@ -30,8 +25,6 @@ function fmt(v: string | number | null | undefined, decimals = 1): string {
   if (n === null) return '—'
   return n % 1 === 0 ? String(n) : n.toFixed(decimals)
 }
-
-// ─── status types + helpers ───────────────────────────────────────────────────
 
 type VitalStatus = 'normal' | 'warning' | 'critical' | 'unknown'
 
@@ -95,15 +88,13 @@ const STATUS_LABEL: Record<VitalStatus, string> = {
   unknown:  '',
 }
 
-// ─── single vital tile ────────────────────────────────────────────────────────
-
 interface TileProps {
   icon: React.ElementType
   label: string
-  value: string          // '—' when unknown
+  value: string
   unit?: string
   status: VitalStatus
-  accent?: string        // tailwind text-colour for the icon bg
+  accent?: string
 }
 
 function VitalTile({ icon: Icon, label, value, unit, status, accent = 'text-primary' }: TileProps) {
@@ -111,7 +102,6 @@ function VitalTile({ icon: Icon, label, value, unit, status, accent = 'text-prim
 
   return (
     <div className="relative flex items-start gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-3.5 py-3 transition-colors hover:bg-surface-2">
-      {/* accent bar on left edge */}
       <span className={`absolute inset-y-0 left-0 w-0.5 rounded-l-[var(--radius-md)] ${
         status === 'normal'   ? 'bg-success/60'
         : status === 'warning'  ? 'bg-warning/60'
@@ -119,12 +109,10 @@ function VitalTile({ icon: Icon, label, value, unit, status, accent = 'text-prim
         : 'bg-transparent'
       }`} />
 
-      {/* icon */}
       <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-surface-2 ${accent}`}>
         <Icon className="size-4" />
       </span>
 
-      {/* label + value */}
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-medium uppercase tracking-wide text-subtle-foreground leading-none mb-1">
           {label}
@@ -141,7 +129,6 @@ function VitalTile({ icon: Icon, label, value, unit, status, accent = 'text-prim
         </div>
       </div>
 
-      {/* status badge */}
       {hasValue ? (
         <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
           <span className={`size-2 rounded-full ${STATUS_DOT[status]}`} />
@@ -157,8 +144,6 @@ function VitalTile({ icon: Icon, label, value, unit, status, accent = 'text-prim
     </div>
   )
 }
-
-// ─── section group ────────────────────────────────────────────────────────────
 
 function VitalGroup({
   title,
@@ -180,8 +165,6 @@ function VitalGroup({
   )
 }
 
-// ─── main export ──────────────────────────────────────────────────────────────
-
 interface Props {
   patient: Patient
 }
@@ -199,7 +182,6 @@ export function HealthVitalsCard({ patient }: Props) {
   const ldlVal = numVal(patient.cholesterol_ldl)
   const tgVal  = numVal(patient.triglycerides)
 
-  // How many clinical vitals (beyond height/weight) are populated
   const clinicalCount = [
     patient.blood_pressure, patient.hemoglobin,
     patient.blood_sugar_fasting, patient.blood_sugar_random,
@@ -210,7 +192,6 @@ export function HealthVitalsCard({ patient }: Props) {
   return (
     <Card className="overflow-hidden">
 
-      {/* ── Header ── */}
       <div className="flex items-center justify-between border-b border-border bg-surface-2/40 px-5 py-3.5">
         <div className="flex items-center gap-2.5">
           <span className="grid size-7 place-items-center rounded-[var(--radius-sm)] bg-primary-soft text-primary">
@@ -241,7 +222,7 @@ export function HealthVitalsCard({ patient }: Props) {
 
       <CardContent className="space-y-5 p-5">
 
-        {/* ── Physical measurements (always shown — populated at registration) ── */}
+        {/* ── Physical measurements ── */}
         <VitalGroup title="Physical measurements" cols={3}>
           <VitalTile
             icon={Ruler}
@@ -269,7 +250,7 @@ export function HealthVitalsCard({ patient }: Props) {
           />
         </VitalGroup>
 
-        {/* ── Cardiovascular (always shown) ── */}
+        {/* ── Cardiovascular ── */}
         <VitalGroup title="Cardiovascular" cols={2}>
           <VitalTile
             icon={Heart}
@@ -289,7 +270,7 @@ export function HealthVitalsCard({ patient }: Props) {
           />
         </VitalGroup>
 
-        {/* ── Blood glucose (always shown) ── */}
+        {/* ── Blood glucose ── */}
         <VitalGroup title="Blood glucose" cols={2}>
           <VitalTile
             icon={Droplets}
@@ -309,7 +290,7 @@ export function HealthVitalsCard({ patient }: Props) {
           />
         </VitalGroup>
 
-        {/* ── Lipid panel (always shown) ── */}
+        {/* ── Lipid panel ── */}
         <VitalGroup title="Cholesterol &amp; lipids" cols={4}>
           <VitalTile
             icon={Activity}

@@ -5,6 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.documents.models import Document
 from apps.documents.serializers import DocumentSerializer
 from apps.audit.utils import log_activity
+from apps.doctors.models import AccessRequest
 
 class DocumentPermission(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -46,7 +47,12 @@ class DocumentPermission(permissions.BasePermission):
             return obj.patient.user_id == user.id
         
         if user.role == 'DOCTOR':
-            return obj.patient.assignments.filter(doctor__user=user, status='Active').exists()
+            has_assignment = obj.patient.assignments.filter(doctor__user=user, status='Active').exists()
+            if not has_assignment:
+                return False
+            return AccessRequest.objects.filter(
+                doctor__user=user, patient=obj.patient, status='APPROVED'
+            ).exists()
         
         return False
 
@@ -66,7 +72,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         elif user.role == 'DOCTOR':
             return Document.objects.filter(
                 patient__assignments__doctor__user=user,
-                patient__assignments__status='Active'
+                patient__assignments__status='Active',
+                patient__access_requests__doctor__user=user,
+                patient__access_requests__status='APPROVED',
             ).distinct().select_related('patient', 'uploaded_by')
         elif user.role == 'PATIENT':
             return Document.objects.filter(patient__user=user).select_related('patient', 'uploaded_by')

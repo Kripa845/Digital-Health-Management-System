@@ -5,9 +5,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 def send_welcome_email(email_address, full_name, username, password):
-    """
-    Sends a welcome email containing registration credentials to a newly created Patient or Doctor.
-    """
+   
     subject = "Welcome to Mero Care Card"
     body = (
         f"Dear {full_name},\n\n"
@@ -26,7 +24,7 @@ def send_welcome_email(email_address, full_name, username, password):
 
     logger.info(f"Attempting to send welcome email to {email_address} (Username: {username})")
 
-    # Send email using standard Django send_mail
+    
     send_mail(
         subject=subject,
         message=body,

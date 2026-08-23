@@ -71,8 +71,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment = serializer.save()
         appointment.status = 'PENDING'
         appointment.save(update_fields=['status'])
-        # Accepting/declining is an admin privilege, so route the pending request
-        # to administrators for approval.
+        
         for admin in User.objects.filter(role='ADMIN', is_active=True):
             self._send_notification(
                 receiver=admin,

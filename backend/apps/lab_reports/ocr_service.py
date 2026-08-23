@@ -1,41 +1,33 @@
-"""
-OCR Service for Lab Report Processing
---------------------------------------
-Extracts raw text from uploaded PDF, JPG, JPEG, and PNG lab reports.
-
-The service uses a graceful fallback chain:
-  1. pytesseract  (local Tesseract OCR)
-  2. pdf2image    (converts PDF pages to images before OCR)
-
-All OCR libraries are imported LAZILY inside each function so that a missing
-installation does NOT crash the server at startup — the error only surfaces
-when a lab report is actually uploaded and the view catches it gracefully.
-
-The original file is NEVER modified.  All operations are read-only.
-"""
-
 from __future__ import annotations
 
 import io
 import logging
+import os
+import re
 from pathlib import Path
+
+import pytesseract
+from PIL import Image, ImageEnhance, ImageFilter
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+
+# ── Configuration ────────────────────────────────────────────────────────────
+
+TESSERACT_CMD = os.environ.get('TESSERACT_CMD', '').strip()
+POPPLER_PATH = os.environ.get('POPPLER_PATH', '').strip()
+
+if TESSERACT_CMD and Path(TESSERACT_CMD).is_file():
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
+elif os.name == 'nt':
+    default = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    if Path(default).is_file():
+        pytesseract.pytesseract.tesseract_cmd = default
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
 
 def extract_text_from_file(file_field) -> str:
-    """
-    Accept a Django FieldFile (or anything with a .name and readable bytes)
-    and return the OCR-extracted text as a plain string.
-
-    Raises
-    ------
-    RuntimeError  – OCR library missing, Tesseract not installed, or extraction failed.
-    ValueError    – Unsupported file extension.
-    """
     name: str = file_field.name or ''
     ext = Path(name).suffix.lower()
 
@@ -50,66 +42,98 @@ def extract_text_from_file(file_field) -> str:
     elif ext in ('.jpg', '.jpeg', '.png'):
         return _ocr_image(raw_bytes)
     else:
-        raise ValueError(f'Unsupported file extension "{ext}". Allowed: PDF, JPG, JPEG, PNG.')
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers – all imports are lazy
-# ---------------------------------------------------------------------------
-
-def _get_tesseract():
-    """
-    Lazily import pytesseract and verify Tesseract binary is reachable.
-    Raises RuntimeError with a clear install hint if anything is missing.
-    """
-    try:
-        import pytesseract  # noqa: PLC0415
-    except ImportError:
-        raise RuntimeError(
-            'pytesseract is not installed. '
-            'Run:  pip install pytesseract  '
-            'and install Tesseract-OCR from https://github.com/UB-Mannheim/tesseract/wiki'
+        raise ValueError(
+            f'Unsupported file extension "{ext}". Allowed: PDF, JPG, JPEG, PNG.'
         )
 
-    # On Windows, help pytesseract find the binary automatically.
-    import os, shutil
-    if os.name == 'nt':
-        common = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-        if os.path.isfile(common):
-            pytesseract.pytesseract.tesseract_cmd = common
-        elif not shutil.which('tesseract'):
-            raise RuntimeError(
-                'Tesseract-OCR binary not found. '
-                'Download and install it from https://github.com/UB-Mannheim/tesseract/wiki '
-                'then restart the Django server.'
-            )
 
-    # Quick smoke-test: calling get_tesseract_version() will throw if the binary is missing.
+# ── Image preprocessing ──────────────────────────────────────────────────────
+
+def preprocess_image(img: Image.Image) -> Image.Image:
+    if img.mode not in ('RGB', 'L'):
+        img = img.convert('RGB')
+
+    img = img.convert('L')
+
+    w, h = img.size
+    if w < 1200 or h < 1200:
+        scale = max(1200 / w, 1200 / h, 1.5)
+        new_w, new_h = int(w * scale), int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+    enhancer = ImageEnhance.Contrast(img)
+    img = enhancer.enhance(1.8)
+
+    enhancer = ImageEnhance.Sharpness(img)
+    img = enhancer.enhance(2.0)
+
+    img = img.filter(ImageFilter.MedianFilter(size=3))
+
+    img = img.point(lambda p: 255 if p > 180 else 0)
+
+    return img
+
+
+# ── OCR helpers ──────────────────────────────────────────────────────────────
+
+def _run_ocr_on_image(img: Image.Image) -> str:
+    psm_modes = ['6', '3', '4', '11', '12']
+    best_text = ''
+    best_len = 0
+
+    for psm in psm_modes:
+        try:
+            text = pytesseract.image_to_string(
+                img, lang='eng', config=f'--psm {psm}'
+            ).strip()
+            if len(text) > best_len:
+                best_text = text
+                best_len = len(text)
+        except Exception as exc:
+            logger.warning('Tesseract PSM %s failed: %s', psm, exc)
+
+    if not best_text:
+        raise RuntimeError('Tesseract returned empty text for the image.')
+    return best_text
+
+
+def _ocr_image(raw_bytes: bytes) -> str:
     try:
-        pytesseract.get_tesseract_version()
-    except pytesseract.TesseractNotFoundError as exc:
-        raise RuntimeError(
-            f'Tesseract-OCR binary not found or not in PATH: {exc}. '
-            'Install Tesseract from https://github.com/UB-Mannheim/tesseract/wiki'
-        ) from exc
+        img = Image.open(io.BytesIO(raw_bytes))
+    except Exception as exc:
+        raise RuntimeError(f'Could not open image file: {exc}') from exc
 
-    return pytesseract
-
-
-def _get_pil():
-    """Lazily import Pillow Image."""
     try:
-        from PIL import Image  # noqa: PLC0415
-        return Image
-    except ImportError:
-        raise RuntimeError('Pillow is not installed. Run: pip install Pillow')
+        processed = preprocess_image(img)
+        text = _run_ocr_on_image(processed)
+        logger.info('OCR image complete: %d characters', len(text))
+        return text
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f'Image OCR failed: {exc}') from exc
 
 
-def _get_pdf2image():
-    """Lazily import pdf2image."""
+def _extract_text_from_pdf_direct(raw_bytes: bytes) -> str | None:
     try:
-        from pdf2image import convert_from_bytes  # noqa: PLC0415
-        return convert_from_bytes
+        from pdfminer.high_level import extract_text
+        text = extract_text(io.BytesIO(raw_bytes))
+        cleaned = re.sub(r'\s+', ' ', text).strip()
+        if len(cleaned) > 200:
+            logger.info('Extracted %d chars of selectable PDF text', len(cleaned))
+            return text
+    except Exception as exc:
+        logger.info('Direct PDF text extraction failed: %s', exc)
+    return None
+
+
+def _ocr_pdf(raw_bytes: bytes) -> str:
+    direct_text = _extract_text_from_pdf_direct(raw_bytes)
+    if direct_text:
+        return direct_text
+
+    try:
+        from pdf2image import convert_from_bytes
     except ImportError:
         raise RuntimeError(
             'pdf2image is not installed. '
@@ -117,33 +141,12 @@ def _get_pdf2image():
             'and install poppler from https://github.com/oschwartz10612/poppler-windows/releases/'
         )
 
-
-def _ocr_image(raw_bytes: bytes) -> str:
-    """Run OCR on a raw image byte-string."""
-    pytesseract = _get_tesseract()
-    Image = _get_pil()
-
     try:
-        img = Image.open(io.BytesIO(raw_bytes))
-        # Convert to RGB to avoid mode issues with RGBA / palette images
-        if img.mode not in ('RGB', 'L'):
-            img = img.convert('RGB')
-        text = pytesseract.image_to_string(img, lang='eng', config='--psm 6')
-        return text.strip()
-    except RuntimeError:
-        raise
-    except Exception as exc:
-        raise RuntimeError(f'Image OCR failed: {exc}') from exc
-
-
-def _ocr_pdf(raw_bytes: bytes) -> str:
-    """Convert each PDF page to an image and run OCR on it."""
-    convert_from_bytes = _get_pdf2image()
-    pytesseract = _get_tesseract()
-    Image = _get_pil()
-
-    try:
-        pages = convert_from_bytes(raw_bytes, dpi=300)
+        pages = convert_from_bytes(
+            raw_bytes,
+            dpi=300,
+            poppler_path=POPPLER_PATH if POPPLER_PATH else None,
+        )
     except Exception as exc:
         raise RuntimeError(f'PDF to image conversion failed: {exc}') from exc
 
@@ -153,8 +156,9 @@ def _ocr_pdf(raw_bytes: bytes) -> str:
     page_texts: list[str] = []
     for i, page in enumerate(pages, start=1):
         try:
-            text = pytesseract.image_to_string(page, lang='eng', config='--psm 6')
-            page_texts.append(text.strip())
+            processed = preprocess_image(page)
+            text = _run_ocr_on_image(processed)
+            page_texts.append(text)
         except Exception as exc:
             logger.warning('OCR failed on PDF page %d: %s', i, exc)
 
@@ -164,4 +168,5 @@ def _ocr_pdf(raw_bytes: bytes) -> str:
             'OCR extracted no text from the PDF. '
             'The scan may be too blurry, low-resolution, or the file may be empty.'
         )
+    logger.info('OCR PDF complete: %d pages, %d characters', len(page_texts), len(combined))
     return combined

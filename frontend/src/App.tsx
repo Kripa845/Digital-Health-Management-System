@@ -4,7 +4,7 @@ import { PrivateRoute, RoleRoute, PublicOnlyRoute } from '@/components/route-gua
 import { AppShell } from '@/components/app-shell'
 import { Logo } from '@/components/brand'
 
-// Public (landing kept eager-ish but still split from portals)
+
 const LandingPage = lazy(() => import('@/features/public/LandingPage').then((m) => ({ default: m.LandingPage })))
 const LoginPage = lazy(() => import('@/features/public/LoginPage').then((m) => ({ default: m.LoginPage })))
 const ChangePasswordPage = lazy(() => import('@/features/public/ChangePasswordPage').then((m) => ({ default: m.ChangePasswordPage })))

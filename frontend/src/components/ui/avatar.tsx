@@ -38,7 +38,7 @@ export const AvatarFallback = React.forwardRef<
 ))
 AvatarFallback.displayName = 'AvatarFallback'
 
-/** Convenience avatar that renders an image with initials fallback. */
+
 export function UserAvatar({ name, src, className }: { name?: string | null; src?: string | null; className?: string }) {
   return (
     <Avatar className={className}>

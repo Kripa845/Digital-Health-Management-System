@@ -48,12 +48,12 @@ export function LoginPage() {
         <form onSubmit={submit} className="mt-8 space-y-4">
           <Field label="Username" htmlFor="username">
             <Input id="username" autoFocus autoComplete="username" value={username}
-              onChange={(e) => setUsername(e.target.value)} placeholder="e.g. hari.tamang" />
+              onChange={(e) => setUsername(e.target.value)} />
           </Field>
           <Field label="Password" htmlFor="password">
             <div className="relative">
               <Input id="password" type={showPw ? 'text' : 'password'} autoComplete="current-password" value={password}
-                onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="pr-10" />
+                onChange={(e) => setPassword(e.target.value)} className="pr-10" />
               <button type="button" onClick={() => setShowPw((v) => !v)}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 aria-label={showPw ? 'Hide password' : 'Show password'}>

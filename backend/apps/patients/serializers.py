@@ -12,7 +12,7 @@ from apps.patients.models import Patient
 User = get_user_model()
 
 
-# Helpers
+
 
 def _generate_password(length: int = 10) -> str:
     alphabet = string.ascii_letters + string.digits
@@ -41,6 +41,22 @@ from apps.users.username import normalize_name as _normalize_name
 
 # Serializer
 
+class PublicPatientSerializer(serializers.ModelSerializer):
+    age = serializers.IntegerField(read_only=True)
+    uuid = serializers.UUIDField(source='uuid_token', read_only=True)
+
+    class Meta:
+        model = Patient
+        fields = (
+            'id', 'uuid', 'patient_id',
+            'first_name', 'middle_name', 'last_name',
+            'photo', 'dob', 'age', 'gender', 'blood_group',
+            'phone', 'emergency_contact',
+            'status',
+        )
+        read_only_fields = fields
+
+
 class PatientSerializer(serializers.ModelSerializer):
     username = serializers.CharField(write_only=True, required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -62,7 +78,7 @@ class PatientSerializer(serializers.ModelSerializer):
             'dob', 'age', 'gender', 'blood_group',
             'phone', 'emergency_contact', 'email', 'address',
             'height', 'weight',
-            # ── Clinical vitals (auto-updated by lab report OCR / CDSA) ──
+            
             'blood_pressure',
             'blood_sugar_fasting',
             'blood_sugar_random',
@@ -71,7 +87,7 @@ class PatientSerializer(serializers.ModelSerializer):
             'cholesterol_hdl',
             'cholesterol_ldl',
             'triglycerides',
-            # ─────────────────────────────────────────────────────────────
+            
             'allergies', 'current_medication',
             'prescription', 'pain_log',
             'status', 'photo',
