@@ -27,7 +27,9 @@ django-filter, WhiteNoise, SQLite (dev) / PostgreSQL (prod), optional Cloudinary
 ### 1. Backend (http://127.0.0.1:8000)
 ```bash
 cd backend
+python -m venv venv              # first run only
 venv\Scripts\activate            # Windows PowerShell/cmd  ·  Git Bash: source venv/Scripts/activate
+pip install -r requirements.txt  # first run only
 python manage.py migrate         # first run only
 python manage.py seed_demo       # rich demo data + prints credentials
 python manage.py runserver 127.0.0.1:8000
@@ -39,6 +41,9 @@ cd frontend
 npm install                      # first run only
 npm run dev
 ```
+Optionally copy `backend/.env.example` to `backend/.env` to override settings; without it the
+backend runs with development defaults.
+
 Vite proxies `/api` and `/media` to the backend, so no CORS setup is needed in dev.
 
 ### Demo accounts
@@ -48,7 +53,7 @@ Vite proxies `/api` and `/media` to the backend, so no CORS setup is needed in d
 | Doctor | `dr.sharma` | `doctor12345` |
 | Patient | `hari.tamang` | `patient12345` |
 
-(Full list printed by `seed_demo`, and in [`docs/DEMO_CREDENTIALS.md`](docs/DEMO_CREDENTIALS.md).
+(Full list printed by `seed_demo`.
 Sign-in is a simple username + password — no email step.)
 
 ---
@@ -70,11 +75,6 @@ A single token layer in `frontend/src/index.css` drives everything: warm-paper n
 subtle green bias, a healing emerald-teal brand accent, semantic colors kept distinct from the brand,
 and full light/dark theming (system-aware, with a manual toggle). Components live in
 `frontend/src/components/ui`.
-
-## Documentation
-- [`docs/BACKEND_SPEC.md`](docs/BACKEND_SPEC.md) — models, endpoints, the recommendation formula.
-- [`docs/FRONTEND_GUIDE.md`](docs/FRONTEND_GUIDE.md) — component inventory & conventions.
-- [`docs/DEMO_CREDENTIALS.md`](docs/DEMO_CREDENTIALS.md) — accounts & run commands.
 
 ## Security notes
 JWT sessions with rotating refresh tokens, a first-login forced password change, role-based access
