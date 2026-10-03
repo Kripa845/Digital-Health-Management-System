@@ -1,0 +1,255 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+@import "@fontsource-variable/fraunces";
+@import "@fontsource-variable/hanken-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Dark mode driven by data-theme on <html> (set by ThemeProvider, resolves system) */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ────────────────────────────────────────────────────────────────
+   Elevated Health — design tokens
+   Warm-paper neutrals with a subtle green bias, a healing
+   emerald-teal accent, and semantic colors kept distinct from brand.
+   ──────────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces & neutrals (light) — warm paper, faint green cast */
+  --background: #f6f7f2;
+  --surface: #fdfefb;
+  --surface-2: #eef1e9;
+  --surface-3: #e6ebe0;
+  --foreground: #18231f;
+  --muted-foreground: #58635c;
+  --subtle-foreground: #7b857d;
+  --border: #e0e6da;
+  --border-strong: #cfd7c8;
+  --input: #e0e6da;
+
+  /* Brand — healing emerald-teal */
+  --primary: #0f7a6b;
+  --primary-hover: #0c6153;
+  --primary-foreground: #ffffff;
+  --primary-soft: #e2f1ec;
+  --primary-soft-foreground: #0b5648;
+
+  /* Supporting cool accent — used for links/info, distinct from brand */
+  --accent: #2f6f8f;
+  --accent-soft: #e4eef3;
+
+  /* Semantic */
+  --success: #128a5e;
+  --success-soft: #dff2e8;
+  --warning: #b06a12;
+  --warning-soft: #f8ecd6;
+  --danger: #be2f45;
+  --danger-soft: #fae2e4;
+  --info: #2f6f8f;
+  --info-soft: #e4eef3;
+
+  /* Ring / focus */
+  --ring: #0f7a6b;
+
+  /* Role tints */
+  --role-admin: #7c5cbf;
+  --role-doctor: #0f7a6b;
+  --role-patient: #2f6f8f;
+
+  /* Radius scale */
+  --radius: 0.9rem;
+
+  /* Elevation — soft, warm-tinted shadows */
+  --shadow-xs: 0 1px 2px rgba(24, 35, 31, 0.05);
+  --shadow-sm: 0 2px 8px -2px rgba(24, 35, 31, 0.08);
+  --shadow-md: 0 8px 24px -8px rgba(24, 35, 31, 0.12);
+  --shadow-lg: 0 20px 48px -16px rgba(24, 35, 31, 0.16);
+  --shadow-glow: 0 8px 32px -8px rgba(15, 122, 107, 0.28);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --background: #0b110e;
+  --surface: #121a16;
+  --surface-2: #18211c;
+  --surface-3: #1f2a23;
+  --foreground: #e9efe9;
+  --muted-foreground: #93a099;
+  --subtle-foreground: #6f7d75;
+  --border: #253029;
+  --border-strong: #334137;
+  --input: #253029;
+
+  --primary: #2fd0b0;
+  --primary-hover: #46dcbe;
+  --primary-foreground: #04130f;
+  --primary-soft: #13332b;
+  --primary-soft-foreground: #7fe6cf;
+
+  --accent: #6fb2d1;
+  --accent-soft: #16262e;
+
+  --success: #35c088;
+  --success-soft: #12291f;
+  --warning: #e0a44a;
+  --warning-soft: #2b2213;
+  --danger: #f0637a;
+  --danger-soft: #2c151a;
+  --info: #6fb2d1;
+  --info-soft: #16262e;
+
+  --ring: #2fd0b0;
+
+  --role-admin: #b49bec;
+  --role-doctor: #2fd0b0;
+  --role-patient: #6fb2d1;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 56px -20px rgba(0, 0, 0, 0.65);
+  --shadow-glow: 0 8px 36px -8px rgba(47, 208, 176, 0.3);
+
+  color-scheme: dark;
+}
+
+/* Expose tokens to Tailwind utilities (bg-background, text-foreground, etc.) */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --color-ring: var(--ring);
+  --color-role-admin: var(--role-admin);
+  --color-role-doctor: var(--role-doctor);
+  --color-role-patient: var(--role-patient);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-sm: calc(var(--radius) - 0.45rem);
+  --radius-xl: calc(var(--radius) + 0.35rem);
+  --radius-2xl: calc(var(--radius) + 0.75rem);
+
+  --font-sans: "Hanken Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces Variable", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+  }
+  h1, h2, h3, h4 {
+    text-wrap: balance;
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 24%, transparent);
+    color: var(--foreground);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 999px;
+    border: 3px solid var(--background);
+  }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer utilities {
+  .font-display { font-family: var(--font-display); }
+  .font-mono { font-family: var(--font-mono); }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Frosted surface used for cards, nav, sheets */
+  .glass {
+    background-color: color-mix(in oklab, var(--surface) 80%, transparent);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  }
+
+  /* Ambient gradient for hero / auth backdrops */
+  .aurora {
+    background:
+      radial-gradient(60% 55% at 15% 0%, color-mix(in oklab, var(--primary) 16%, transparent) 0%, transparent 60%),
+      radial-gradient(50% 50% at 100% 10%, color-mix(in oklab, var(--accent) 14%, transparent) 0%, transparent 55%),
+      radial-gradient(70% 60% at 60% 100%, color-mix(in oklab, var(--primary) 10%, transparent) 0%, transparent 60%);
+  }
+
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Print: isolate a .print-area (e.g. the health card) and hide chrome */
+@media print {
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    padding: 2rem;
+  }
+  body:has(.print-area) > * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+}
