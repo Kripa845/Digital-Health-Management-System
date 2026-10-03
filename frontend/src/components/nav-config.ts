@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard, Users, Stethoscope, CalendarDays, Sparkles,
   ShieldCheck, ScrollText, Settings, IdCard, FileText, ScanLine,
-  UserCircle, HeartPulse,
+  UserCircle, HeartPulse, FlaskConical, ClipboardCheck, BrainCircuit,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -28,12 +28,14 @@ export const NAV: Record<Role, NavSection[]> = {
         { label: 'Doctors', to: '/admin/doctors', icon: Stethoscope },
         { label: 'Appointments', to: '/admin/appointments', icon: CalendarDays },
         { label: 'Recommendations', to: '/admin/recommendations', icon: Sparkles },
+        { label: 'Symptom Checker', to: '/admin/symptom-checker', icon: BrainCircuit },
       ],
     },
     {
       heading: 'Governance',
       items: [
         { label: 'Access Requests', to: '/admin/access-requests', icon: ShieldCheck },
+        { label: 'Lab Report Review', to: '/admin/lab-review', icon: ClipboardCheck },
         { label: 'Audit Log', to: '/admin/audit', icon: ScrollText },
         { label: 'Settings', to: '/admin/settings', icon: Settings },
       ],
@@ -61,8 +63,10 @@ export const NAV: Record<Role, NavSection[]> = {
       items: [
         { label: 'Health Card', to: '/patient/card', icon: IdCard },
         { label: 'Appointments', to: '/patient/appointments', icon: CalendarDays },
-        { label: 'Reports', to: '/patient/reports', icon: FileText },
+        { label: 'Lab Reports', to: '/patient/lab-reports', icon: FlaskConical },
+        { label: 'Documents', to: '/patient/reports', icon: FileText },
         { label: 'Find a Doctor', to: '/patient/find-care', icon: HeartPulse },
+        { label: 'Symptom Checker', to: '/patient/symptom-checker', icon: BrainCircuit },
       ],
     },
     {

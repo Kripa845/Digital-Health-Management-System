@@ -31,7 +31,12 @@ export function ChangePasswordPage() {
       await refresh()
       navigate(homePathFor(role), { replace: true })
     } catch (err: any) {
-      toast.error(err.response?.data?.old_password?.[0] || err.response?.data?.detail || 'Could not update your password.')
+      const data = err.response?.data
+      const first = (v: unknown) => (Array.isArray(v) ? v[0] : v) as string | undefined
+      toast.error(
+        first(data?.old_password) || first(data?.new_password) || first(data?.non_field_errors)
+          || data?.detail || 'Could not update your password.',
+      )
     } finally { setLoading(false) }
   }
 

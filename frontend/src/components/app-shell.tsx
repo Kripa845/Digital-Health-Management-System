@@ -56,7 +56,8 @@ function SidebarNav({ role, onNavigate }: { role: Role; onNavigate?: () => void 
 
 function UserMenu() {
   const { user, logout } = useAuth()
-  const name = session.name || user?.username || 'User'
+  // Prefer the live profile so a name change shows straight away.
+  const name = `${user?.first_name ?? ''} ${user?.last_name ?? ''}`.trim() || session.name || user?.username || 'User'
   const role = (user?.role ?? session.role) as Role
   return (
     <DropdownMenu>

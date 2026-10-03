@@ -8,7 +8,9 @@ import { Card } from '@/components/ui/card'
 import { PageHeader, DataState, EmptyState, ListSkeleton } from '@/components/patterns'
 import { auditService } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
-import { useDebounced, tableHeadClass } from './admin-common'
+import {
+  useDebounced, tableHeadClass,
+} from './admin-utils'
 
 const ACTION_OPTIONS = [
   { value: 'all', label: 'All actions' },

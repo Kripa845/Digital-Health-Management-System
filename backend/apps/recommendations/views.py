@@ -1,7 +1,10 @@
 import csv
 import json
-from datetime import date as date_type
+import re
+from functools import lru_cache
 from pathlib import Path
+
+from django.utils import timezone
 
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
@@ -9,7 +12,7 @@ from rest_framework.response import Response
 from apps.recommendations.models import RecommendationHistory
 from apps.recommendations.serializers import RecommendationHistorySerializer
 from apps.doctors.models import Doctor
-from apps.doctors.serializers import DoctorSerializer
+from apps.doctors.serializers import PublicDoctorSerializer
 from apps.patients.models import Patient
 from apps.audit.utils import log_activity
 
@@ -40,6 +43,27 @@ def _load_symptom_severity():
     return severity
 
 
+_NEGATION_RE = re.compile(r"\b(?:no|not|without|denies|denied|never|none)\b(?:\W+\w+){0,2}\W*$")
+
+
+@lru_cache(maxsize=None)
+def _keyword_re(keyword: str) -> re.Pattern:
+    return re.compile(rf"(?<![a-z0-9]){re.escape(keyword.lower())}(?![a-z0-9])")
+
+
+def mentions(keyword: str, text: str) -> bool:
+    """True when ``keyword`` appears as a whole word and is not negated.
+
+    "bp" does not match inside "subpar", "ear" does not match "heart", and
+    "no chest pain" does not count as chest pain.
+    """
+    for m in _keyword_re(keyword).finditer(text or ''):
+        before = text[max(0, m.start() - 40):m.start()]
+        if not _NEGATION_RE.search(before):
+            return True
+    return False
+
+
 DEPARTMENT_RULES, DEPARTMENT_EQUIVALENCES = _load_department_map()
 SYMPTOM_SEVERITY = _load_symptom_severity()
 _MAX_SEVERITY = 7
@@ -49,7 +73,7 @@ def clinical_severity_index(symptoms: str) -> int:
     text = (symptoms or '').lower()
     matched = [
         weight for name, weight in SYMPTOM_SEVERITY.items()
-        if name.replace('_', ' ') in text
+        if mentions(name.replace('_', ' '), text)
     ]
     if not matched:
         return 0
@@ -64,9 +88,9 @@ def score_departments(symptoms: str, medical_history: str = '') -> dict:
     for dept, keywords in DEPARTMENT_RULES.items():
         total = 0.0
         for kw, weight in keywords.items():
-            if kw in symptoms_lower:
+            if mentions(kw, symptoms_lower):
                 total += weight
-            if history_lower and kw in history_lower:
+            if history_lower and mentions(kw, history_lower):
                 total += weight * 0.5
         if total > 0:
             scores[dept] = total
@@ -122,7 +146,7 @@ def score_doctor(doctor, ctx) -> tuple:
     history_lower = ctx['history_lower']
     if history_lower:
         dept_keywords = DEPARTMENT_RULES.get(doctor.department, {})
-        if any(kw in history_lower for kw in dept_keywords):
+        if any(mentions(kw, history_lower) for kw in dept_keywords):
             score += 15.0
             reasons.append(f"medical history relates to {doctor.department}")
 
@@ -227,7 +251,7 @@ def is_doctor_available(doctor: Doctor) -> bool:
     schedule = doctor.availability_schedule or {}
     if not schedule:
         return True
-    today_name = date_type.today().strftime('%A')
+    today_name = timezone.localdate().strftime('%A')
     slot = schedule.get(today_name, '').strip().lower()
     return bool(slot) and slot != 'closed'
 
@@ -236,7 +260,7 @@ def get_equivalenced_depts(symptoms: str, primary_dept: str) -> list:
     depts = [primary_dept]
     symptoms_lower = symptoms.lower()
     for sym, equiv_depts in DEPARTMENT_EQUIVALENCES.items():
-        if sym in symptoms_lower:
+        if mentions(sym, symptoms_lower):
             for d in equiv_depts:
                 if d not in depts:
                     depts.append(d)
@@ -333,7 +357,7 @@ class RecommendationHistoryViewSet(viewsets.ModelViewSet):
         data['clinical_severity'] = result['clinical_severity']
         data['ranked_doctors'] = [
             {
-                **DoctorSerializer(doc, context={'request': request}).data,
+                **PublicDoctorSerializer(doc, context={'request': request}).data,
                 'score': doc_score,
                 'reasons': reasons,
             }

@@ -1,72 +1,57 @@
 /**
  * LabReportRow
  * ------------
- * A single row in the lab reports list showing file info, processing status,
- * summary counts, download button, and expandable processing summary.
+ * One uploaded report: file info, status, view, download and delete (any status,
+ * after a confirmation step), and an
+ * expandable area — the processing summary once confirmed, the confirm form
+ * while it waits for confirmation, or the reason while it is under review.
  */
 
 import { useState } from 'react'
-import {
-  FlaskConical, Download, Trash2, ChevronDown, ChevronUp,
-  CheckCircle2, AlertCircle, Loader2, Clock,
-} from 'lucide-react'
+import { FlaskConical, Download, Eye, Trash2, ChevronDown, ChevronUp, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { labReportService } from '@/lib/api'
-import { formatBytes, formatDate } from '@/lib/utils'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
+} from '@/components/ui/dialog'
+import { apiErrorBody, labReportService } from '@/lib/api'
+import { formatBytes, formatDate, formatDateTime, saveBlob } from '@/lib/utils'
 import type { LabReport } from '@/lib/types'
 import { LabReportSummary } from './LabReportSummary'
-
-// ---------------------------------------------------------------------------
-// Status badge
-// ---------------------------------------------------------------------------
-
-function StatusBadge({ status }: { status: LabReport['status'] }) {
-  switch (status) {
-    case 'COMPLETED':
-      return <Badge variant="success"><CheckCircle2 />Processed</Badge>
-    case 'PROCESSING':
-      return <Badge variant="info"><Loader2 className="animate-spin" />Processing</Badge>
-    case 'FAILED':
-      return <Badge variant="danger"><AlertCircle />Failed</Badge>
-    default:
-      return <Badge variant="neutral"><Clock />Pending</Badge>
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Row
-// ---------------------------------------------------------------------------
+import { LabReportPreview } from './LabReportPreview'
+import { LabReportViewer } from './LabReportViewer'
+import { ReportStatusBadge } from './LabStatusBadge'
+import { invalidateLab } from './hooks'
 
 interface Props {
   report: LabReport
   patientId: number
+  /** Kept for older callers; refreshing is handled centrally. */
   queryScope?: string
   canDelete?: boolean
 }
 
-export function LabReportRow({ report, patientId, queryScope = 'patient', canDelete = true }: Props) {
+export function LabReportRow({ report, canDelete = true }: Props) {
   const qc = useQueryClient()
-  const [expanded, setExpanded] = useState(false)
+  const pending = report.status === 'PENDING_CONFIRMATION' || report.status === 'NO_VALUES_SAVEABLE'
+  const savedDocument = report.status === 'SAVED_NO_VALUES'
+  const confirmed = report.status === 'CONFIRMED'
+  const inReview = report.status === 'NEEDS_REVIEW'
+  // A report waiting for confirmation opens straight to its preview.
+  const [expanded, setExpanded] = useState(pending)
   const [downloading, setDownloading] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [viewing, setViewing] = useState(false)
+  const expandable = confirmed || pending || inReview || savedDocument || report.status === 'REJECTED'
 
   async function download() {
     setDownloading(true)
     try {
-      const blob = await labReportService.download(report.id)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = report.name || `lab-report-${report.id}`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch {
-      toast.error('Could not download the report.')
+      saveBlob(await labReportService.download(report.id), report.name || `lab-report-${report.id}`)
+    } catch (err) {
+      toast.error(apiErrorBody(err).message)
     } finally {
       setDownloading(false)
     }
@@ -75,19 +60,19 @@ export function LabReportRow({ report, patientId, queryScope = 'patient', canDel
   const deleteMut = useMutation({
     mutationFn: () => labReportService.remove(report.id),
     onSuccess: () => {
-      toast.success('Lab report deleted.')
-      qc.invalidateQueries({ queryKey: [queryScope, 'lab-reports', patientId] })
+      setConfirmDelete(false)
+      toast.success(confirmed ? 'Lab report deleted and its values removed from the dashboard.' : 'Lab report deleted.')
+      invalidateLab(qc)
+      qc.invalidateQueries({ queryKey: ['admin', 'patients'] })
     },
-    onError: (err: any) =>
-      toast.error(err?.response?.data?.detail || 'Could not delete the report.'),
+    onError: (err) => toast.error(apiErrorBody(err).message),
   })
 
   return (
     <Card className="overflow-hidden">
-      {/* Main row */}
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex flex-wrap items-center gap-3 p-4">
         <span className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-md)] bg-primary-soft text-primary">
-          <FlaskConical className="size-5" />
+          <FlaskConical className="size-5" aria-hidden="true" />
         </span>
 
         <div className="min-w-0 flex-1">
@@ -95,72 +80,96 @@ export function LabReportRow({ report, patientId, queryScope = 'patient', canDel
           <p className="truncate text-xs text-muted-foreground">
             {report.file_type || '—'}
             {report.size ? ` · ${formatBytes(report.size)}` : ''}
-            {' · '}
-            {formatDate(report.uploaded_at)}
+            {' · uploaded '}{formatDateTime(report.uploaded_at)}
+            {report.report_date ? ` · report dated ${formatDate(report.report_date)}` : ''}
             {report.uploaded_by_name ? ` · by ${report.uploaded_by_name}` : ''}
           </p>
         </div>
 
-        {/* Summary pills – only when completed */}
-        {report.status === 'COMPLETED' && report.detected_count > 0 && (
-          <div className="hidden sm:flex items-center gap-2 text-xs">
-            <span className="flex items-center gap-1 text-info">
-              <FlaskConical className="size-3" />
-              {report.detected_count} detected
-            </span>
-            {report.updated_count > 0 && (
-              <span className="flex items-center gap-1 text-success">
-                <CheckCircle2 className="size-3" />
-                {report.updated_count} updated
-              </span>
-            )}
-          </div>
+        {confirmed && report.updated_count > 0 && (
+          <span className="hidden items-center gap-1 text-xs text-success sm:flex">
+            <CheckCircle2 className="size-3" aria-hidden="true" />{report.updated_count} updated
+          </span>
         )}
 
-        <StatusBadge status={report.status} />
+        <ReportStatusBadge status={report.status} />
 
-        {/* Expand toggle (only for completed with fields) */}
-        {report.status === 'COMPLETED' && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? 'Hide summary' : 'Show summary'}
-          >
+        {expandable && (
+          <Button variant="ghost" size="icon-sm" onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded} aria-label={expanded ? 'Hide details' : pending ? 'Review values' : 'Show details'}>
             {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </Button>
         )}
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={download}
-          loading={downloading}
-          aria-label="Download original report"
-        >
-          {!downloading && <Download className="size-4" />}
-        </Button>
+        {report.status !== 'REJECTED' && (
+          <Button variant="ghost" size="icon-sm" onClick={() => setViewing(true)} aria-label="View report">
+            <Eye className="size-4" />
+          </Button>
+        )}
+
+        {report.status !== 'REJECTED' && (
+          <Button variant="ghost" size="icon-sm" onClick={download} loading={downloading} aria-label="Download original report">
+            {!downloading && <Download className="size-4" />}
+          </Button>
+        )}
 
         {canDelete && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-danger hover:text-danger"
-            onClick={() => deleteMut.mutate()}
-            loading={deleteMut.isPending}
-            aria-label="Delete lab report"
-          >
-            {!deleteMut.isPending && <Trash2 className="size-4" />}
+          <Button variant="ghost" size="icon-sm" className="text-danger hover:text-danger"
+            onClick={() => setConfirmDelete(true)} aria-label="Delete lab report">
+            <Trash2 className="size-4" />
           </Button>
         )}
       </div>
 
-      {/* Expandable summary */}
-      {expanded && report.status === 'COMPLETED' && (
+      {expanded && (
         <div className="border-t border-border bg-surface-2/40 px-4 pb-4 pt-3">
-          <LabReportSummary report={report} compact />
+          {confirmed && <LabReportSummary report={report} compact />}
+          {savedDocument && (
+            <p className="text-sm text-muted-foreground">Saved as a document only. No health card values were found, so the dashboard did not change.</p>
+          )}
+          {pending && (canDelete
+            ? <LabReportPreview report={report} />
+            : <p className="text-sm text-muted-foreground">Waiting for the patient or an administrator to confirm these values.</p>)}
+          {inReview && (
+            <div className="space-y-1.5 text-sm" role="status">
+              <p className="flex items-center gap-1.5 font-medium"><ShieldAlert className="size-4 text-info" />
+                The care team is checking this report. Nothing on the dashboard has changed.</p>
+              {!!report.review_messages?.length && (
+                <ul className="list-disc pl-5 text-muted-foreground">{report.review_messages.map((m) => <li key={m}>{m}</li>)}</ul>
+              )}
+            </div>
+          )}
+          {report.status === 'REJECTED' && (
+            <p className="text-sm text-muted-foreground">
+              This report was not accepted{report.review_note ? `: ${report.review_note}` : '.'} Nothing was changed and the file was deleted.
+            </p>
+          )}
         </div>
       )}
+
+      {report.status !== 'REJECTED' && (
+        <LabReportViewer report={report} open={viewing} onOpenChange={setViewing} />
+      )}
+
+      <Dialog open={confirmDelete} onOpenChange={(o) => { if (!deleteMut.isPending) setConfirmDelete(o) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete lab report?</DialogTitle>
+            <DialogDescription>
+              {confirmed
+                ? `"${report.name}" and the file will be deleted. The values it added are removed from the dashboard and its history; where an earlier report has the same test, that value is shown again.`
+                : `"${report.name}" and the file will be deleted. Nothing on the dashboard changes.`}
+              {' '}This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="secondary" disabled={deleteMut.isPending}>Cancel</Button></DialogClose>
+            <Button variant="danger" loading={deleteMut.isPending} onClick={() => deleteMut.mutate()}>
+              {!deleteMut.isPending && <Trash2 className="size-4" />}Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

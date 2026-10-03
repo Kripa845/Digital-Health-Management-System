@@ -11,7 +11,9 @@ import { AccessStatusBadge } from '@/components/status-badge'
 import { accessRequestService } from '@/lib/api'
 import type { AccessRequest } from '@/lib/types'
 import { formatDateTime } from '@/lib/utils'
-import { apiError } from './admin-common'
+import {
+  apiError,
+} from './admin-utils'
 
 const STATUS_OPTIONS = [
   { value: 'PENDING', label: 'Pending' },

@@ -24,9 +24,11 @@ import { doctorService, patientService, assignmentService } from '@/lib/api'
 import type { Doctor, DoctorAssignment, Patient } from '@/lib/types'
 import { formatDate } from '@/lib/utils'
 import {
-  DEPARTMENTS, GENDERS, STATUSES, WEEKDAYS, NEPAL_PHONE, NAME_RE, NMC_RE, formatName, formatNmc, apiError, useDebounced,
-  CredentialRow, tableHeadClass,
+  CredentialRow, CredentialsDialog, type GeneratedCreds,
 } from './admin-common'
+import {
+  DEPARTMENTS, GENDERS, STATUSES, WEEKDAYS, NEPAL_PHONE, NAME_RE, NMC_RE, formatName, formatNmc, apiError, useDebounced, tableHeadClass,
+} from './admin-utils'
 
 type DaySchedule = { closed: boolean; start: string; end: string }
 type ScheduleState = Record<string, DaySchedule>
@@ -158,11 +160,13 @@ function validateDoctor(f: DoctorForm): Record<string, string> {
 }
 
 function DoctorFormDialog({
-  open, onOpenChange, doctor,
+  open, onOpenChange, doctor, onCredentials,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   doctor: Doctor | null
+  /** Called when the welcome email failed and the admin must hand over the login details. */
+  onCredentials?: (creds: GeneratedCreds) => void
 }) {
   const qc = useQueryClient()
   const isEdit = !!doctor
@@ -202,6 +206,13 @@ function DoctorFormDialog({
       onOpenChange(false)
       if (isEdit) {
         toast.success('Doctor updated.')
+      } else if (data.generated_username) {
+        toast.warning(data.message || 'Doctor registered, but the welcome email could not be sent.')
+        onCredentials?.({
+          name: `Dr. ${form.first_name} ${form.last_name}`.trim(),
+          username: data.generated_username,
+          password: data.generated_password ?? '',
+        })
       } else {
         toast.success(data.message || 'Doctor registered.')
       }
@@ -402,6 +413,7 @@ export function AdminDoctors() {
   const [addOpen, setAddOpen] = useState(false)
   const [editDoctor, setEditDoctor] = useState<Doctor | null>(null)
   const [viewDoctor, setViewDoctor] = useState<Doctor | null>(null)
+  const [creds, setCreds] = useState<GeneratedCreds | null>(null)
   const [assignDoctor, setAssignDoctor] = useState<Doctor | null>(null)
   const [deleteDoctor, setDeleteDoctor] = useState<Doctor | null>(null)
   const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
@@ -547,7 +559,8 @@ export function AdminDoctors() {
       </DataState>
 
       {/* Dialogs */}
-      <DoctorFormDialog open={addOpen} onOpenChange={setAddOpen} doctor={null} />
+      <DoctorFormDialog open={addOpen} onOpenChange={setAddOpen} doctor={null} onCredentials={setCreds} />
+      <CredentialsDialog creds={creds} onClose={() => setCreds(null)} emailed={false} />
       <DoctorFormDialog open={!!editDoctor} onOpenChange={(o) => { if (!o) setEditDoctor(null) }} doctor={editDoctor} />
       <AssignmentsDialog doctor={assignDoctor} onClose={() => setAssignDoctor(null)} />
       <DoctorDetailsDialog doctor={viewDoctor} onClose={() => setViewDoctor(null)}
@@ -558,11 +571,12 @@ export function AdminDoctors() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Password reset</DialogTitle>
-            <DialogDescription>A new temporary password for {resetResult?.name} has been generated and emailed.</DialogDescription>
+            <DialogDescription>
+              A new temporary password for {resetResult?.name} has been generated. Give it to the doctor; they
+              will be asked to change it when they next sign in.
+            </DialogDescription>
           </DialogHeader>
-          {resetResult?.password
-            ? <CredentialRow label="New password" value={resetResult.password} />
-            : <p className="text-sm text-muted-foreground">The new password was emailed to the doctor.</p>}
+          {resetResult?.password && <CredentialRow label="New password" value={resetResult.password} />}
           <DialogFooter>
             <DialogClose asChild><Button className="w-full sm:w-auto">Done</Button></DialogClose>
           </DialogFooter>

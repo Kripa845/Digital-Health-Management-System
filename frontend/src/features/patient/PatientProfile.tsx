@@ -1,19 +1,190 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useMutation } from '@tanstack/react-query'
 import {
-  UserCircle, KeyRound, IdCard, HeartPulse, Phone, ShieldCheck, AlertTriangle,
+  UserCircle, KeyRound, IdCard, HeartPulse, Phone, ShieldCheck, AlertTriangle, Pencil,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input, Textarea } from '@/components/ui/input'
+import { Field } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
+} from '@/components/ui/dialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserAvatar } from '@/components/ui/avatar'
 import { PageHeader, InfoRow, EmptyState } from '@/components/patterns'
 import { ActiveStatusBadge } from '@/components/status-badge'
 import { Skeleton } from '@/components/ui/misc'
 import { useAuth } from '@/lib/auth'
+import { patientService } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import type { Patient } from '@/lib/types'
+import { NAME_RE, formatName } from '@/features/admin/admin-utils'
+
+// Same rules the server applies (apps/patients/serializers.py).
+const NEPAL_PHONE = /^(98|97)\d{8}$/
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const MAX_PHOTO = 5 * 1024 * 1024
+
+type ContactForm = {
+  first_name: string; middle_name: string; last_name: string
+  phone: string; emergency_contact: string; email: string; address: string
+}
+
+function validateContact(f: ContactForm): Partial<Record<keyof ContactForm, string>> {
+  const e: Partial<Record<keyof ContactForm, string>> = {}
+  const NAME_HINT = 'Letters only (hyphens, apostrophes and dots are fine).'
+  if (f.first_name.trim().length < 2) e.first_name = 'First name must be at least 2 characters.'
+  else if (!NAME_RE.test(f.first_name.trim())) e.first_name = NAME_HINT
+  if (f.middle_name.trim() && !NAME_RE.test(f.middle_name.trim())) e.middle_name = NAME_HINT
+  if (f.last_name.trim().length < 2) e.last_name = 'Last name must be at least 2 characters.'
+  else if (!NAME_RE.test(f.last_name.trim())) e.last_name = NAME_HINT
+  if (!NEPAL_PHONE.test(f.phone.trim())) e.phone = 'Enter a 10-digit mobile number starting with 98 or 97.'
+  if (!NEPAL_PHONE.test(f.emergency_contact.trim())) e.emergency_contact = 'Enter a 10-digit mobile number starting with 98 or 97.'
+  else if (f.emergency_contact.trim() === f.phone.trim()) e.emergency_contact = 'Use a different number from your own.'
+  if (!f.email.trim()) e.email = 'Email is required.'
+  else if (!EMAIL_RE.test(f.email.trim())) e.email = 'Enter a valid email address.'
+  else if (f.email.trim() !== f.email.trim().toLowerCase()) e.email = 'Use lowercase letters only.'
+  if (f.address.trim().length < 5) e.address = 'Address must be at least 5 characters.'
+  return e
+}
+
+/** Lets a patient change their contact details and photo. */
+function EditProfileDialog({ patient, open, onOpenChange }: {
+  patient: Patient
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { refresh } = useAuth()
+  const initial: ContactForm = {
+    first_name: patient.first_name ?? '',
+    middle_name: patient.middle_name ?? '',
+    last_name: patient.last_name ?? '',
+    phone: patient.phone ?? '',
+    emergency_contact: patient.emergency_contact ?? '',
+    email: patient.email ?? '',
+    address: patient.address ?? '',
+  }
+  const [form, setForm] = useState<ContactForm>(initial)
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Start from the saved values every time the dialog opens.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) { setForm(initial); setPhoto(null); setErrors({}) }
+  }
+
+  const set = (k: keyof ContactForm, v: string) => setForm((s) => ({ ...s, [k]: v }))
+
+  const save = useMutation({
+    mutationFn: () => {
+      const fd = new FormData()
+      for (const [k, v] of Object.entries(form) as [keyof ContactForm, string][]) {
+        if (v.trim() !== (initial[k] ?? '').trim()) fd.append(k, v.trim())
+      }
+      if (photo) fd.append('photo', photo)
+      return patientService.updateMe(fd)
+    },
+    onSuccess: async () => {
+      await refresh()
+      toast.success('Your profile has been updated.')
+      onOpenChange(false)
+    },
+    onError: (err: any) => {
+      const data = err?.response?.data
+      if (data && typeof data === 'object' && !data.detail) {
+        const fieldErrors: Record<string, string> = {}
+        for (const [k, v] of Object.entries(data)) fieldErrors[k] = Array.isArray(v) ? String(v[0]) : String(v)
+        setErrors(fieldErrors)
+        toast.error('Please fix the highlighted fields.')
+      } else {
+        toast.error(data?.detail || 'Could not update your profile.')
+      }
+    },
+  })
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const errs: Record<string, string> = { ...validateContact(form) }
+    if (photo && photo.size > MAX_PHOTO) errs.photo = 'Photo must be 5 MB or smaller.'
+    setErrors(errs)
+    if (Object.keys(errs).length) return
+    const changed = photo || (Object.keys(form) as (keyof ContactForm)[]).some((k) => form[k].trim() !== (initial[k] ?? '').trim())
+    if (!changed) { onOpenChange(false); return }
+    save.mutate()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!save.isPending) onOpenChange(o) }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit profile</DialogTitle>
+          <DialogDescription>Update your name, how your care team can reach you, and your photo.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4" noValidate>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="First name" htmlFor="pp-first" required error={errors.first_name}>
+              <Input id="pp-first" autoComplete="given-name" maxLength={50} value={form.first_name}
+                onChange={(e) => set('first_name', formatName(e.target.value))} />
+            </Field>
+            <Field label="Middle name" htmlFor="pp-middle" error={errors.middle_name}>
+              <Input id="pp-middle" autoComplete="additional-name" maxLength={50} value={form.middle_name}
+                onChange={(e) => set('middle_name', formatName(e.target.value))} />
+            </Field>
+            <Field label="Last name" htmlFor="pp-last" required error={errors.last_name}>
+              <Input id="pp-last" autoComplete="family-name" maxLength={50} value={form.last_name}
+                onChange={(e) => set('last_name', formatName(e.target.value))} />
+            </Field>
+          </div>
+          {(form.first_name.trim() !== initial.first_name.trim() || form.last_name.trim() !== initial.last_name.trim()
+            || form.middle_name.trim() !== initial.middle_name.trim()) && (
+            <p className="rounded-[var(--radius-md)] bg-warning-soft px-3 py-2 text-xs text-warning">
+              Use your name exactly as it appears on your lab reports, or uploaded reports won't match.
+              Your care team is notified when you change your name. You still sign in with the same username.
+            </p>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Phone" htmlFor="pp-phone" required error={errors.phone}>
+              <Input id="pp-phone" inputMode="numeric" maxLength={10} value={form.phone}
+                onChange={(e) => set('phone', e.target.value.replace(/\D/g, ''))} />
+            </Field>
+            <Field label="Emergency contact" htmlFor="pp-emergency" required error={errors.emergency_contact}>
+              <Input id="pp-emergency" inputMode="numeric" maxLength={10} value={form.emergency_contact}
+                onChange={(e) => set('emergency_contact', e.target.value.replace(/\D/g, ''))} />
+            </Field>
+          </div>
+          <Field label="Email" htmlFor="pp-email" required error={errors.email}>
+            <Input id="pp-email" type="email" autoComplete="email" value={form.email}
+              onChange={(e) => set('email', e.target.value)} />
+          </Field>
+          <Field label="Address" htmlFor="pp-address" required error={errors.address}>
+            <Textarea id="pp-address" rows={2} maxLength={255} value={form.address}
+              onChange={(e) => set('address', e.target.value)} />
+          </Field>
+          <Field label="Photo" htmlFor="pp-photo" hint="Optional · JPG or PNG, max 5 MB · shown on your health card" error={errors.photo}>
+            <Input id="pp-photo" type="file" accept="image/png,image/jpeg"
+              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+          </Field>
+          <p className="text-xs text-muted-foreground">
+            Your date of birth, gender, blood group and medical details can only be changed by your care team.
+          </p>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="secondary" disabled={save.isPending}>Cancel</Button></DialogClose>
+            <Button type="submit" loading={save.isPending}>Save changes</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export function PatientProfile() {
   const { user, loading } = useAuth()
   const patient = user?.patient_profile
+  const [editing, setEditing] = useState(false)
 
   if (loading) {
     return (
@@ -43,14 +214,20 @@ export function PatientProfile() {
     <div className="space-y-8">
       <PageHeader
         title="My profile"
-        description="A read-only view of the details your care team keeps on file."
+        description="Your details on file. You can update your name, contact details and photo."
         icon={UserCircle}
         actions={
-          <Button asChild variant="secondary">
-            <Link to="/change-password"><KeyRound className="size-4" /> Change password</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setEditing(true)}>
+              <Pencil className="size-4" /> Edit profile
+            </Button>
+            <Button asChild variant="secondary">
+              <Link to="/change-password"><KeyRound className="size-4" /> Change password</Link>
+            </Button>
+          </div>
         }
       />
+      <EditProfileDialog patient={patient} open={editing} onOpenChange={setEditing} />
 
       {/* Identity header */}
       <Card>
@@ -132,8 +309,9 @@ export function PatientProfile() {
       <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border bg-surface-2/50 p-4">
         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
         <p className="text-sm text-muted-foreground text-pretty">
-          Contact your care team to update records. To keep your medical information accurate, core profile
-          details can only be changed by an administrator.
+          You can change your name, phone numbers, email, address and photo with <strong>Edit profile</strong>.
+          To keep your medical information accurate, your date of birth, gender, blood group and medical details
+          can only be changed by your care team.
         </p>
       </div>
     </div>

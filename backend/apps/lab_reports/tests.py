@@ -226,3 +226,62 @@ class PreprocessingTests(TestCase):
         processed = preprocess_image(img)
         self.assertGreaterEqual(processed.width, 1200)
         self.assertGreaterEqual(processed.height, 1200)
+
+
+# ── False-positive and record-safety tests ────────────────────────────────────
+
+class ExtractionFalsePositiveTests(TestCase):
+    def _fields(self, text):
+        return {r.patient_field: r for r in extract_medical_fields(text)}
+
+    def test_short_aliases_do_not_match_inside_words(self):
+        self.assertEqual(self._fields('Patient seen in the past 3 months. Salt 5 g/day.'), {})
+
+    def test_generic_words_are_not_blood_group(self):
+        self.assertNotIn('blood_group', self._fields('Visit type: 2'))
+        self.assertNotIn('blood_group', self._fields('Grade A+ student'))
+
+    def test_blood_group_not_taken_from_neighbouring_number(self):
+        fields = self._fields('Blood group: AB+  Hb 13.2 g/dL')
+        self.assertEqual(fields['blood_group'].extracted_value, 'AB+')
+        self.assertEqual(fields['hemoglobin'].extracted_value, '13.2')
+
+    def test_value_belongs_to_its_own_label(self):
+        fields = self._fields('SGPT: 34 U/L  SGOT: 28 U/L')
+        self.assertEqual(fields['ssgpt_alt'].extracted_value, '34')
+        self.assertEqual(fields['ssgot_ast'].extracted_value, '28')
+
+
+class CDSASafetyTests(TestCase):
+    def setUp(self):
+        from apps.users.factories import make_patient
+        from apps.lab_reports.models import LabReport
+        self.patient = make_patient()
+        self.report = LabReport.objects.create(patient=self.patient, name='r', file='lab_reports/r.pdf')
+
+    def _run(self, text):
+        from apps.lab_reports.cdsa import run_cdsa
+        result = run_cdsa(self.report, extract_medical_fields(text))
+        self.patient.refresh_from_db()
+        return result
+
+    def test_blood_group_is_never_changed_by_ocr(self):
+        result = self._run('Blood group: AB+')
+        self.assertEqual(self.patient.blood_group, 'O+')
+        self.assertEqual([f.patient_field for f in result.needs_review_fields], ['blood_group'])
+
+    def test_implausible_value_is_not_saved(self):
+        result = self._run('Hemoglobin: 132 g/dL')
+        self.assertIsNone(self.patient.hemoglobin)
+        self.assertEqual(result.needs_review_count, 1)
+
+    def test_value_too_large_for_column_is_not_saved(self):
+        from apps.lab_reports.extractor import ExtractedField
+        from apps.lab_reports.cdsa import run_cdsa
+        run_cdsa(self.report, [ExtractedField('Bilirubin', 'bilirubin_total', '1234.5', confidence='high')])
+        self.patient.refresh_from_db()
+        self.assertIsNone(self.patient.bilirubin_total)
+
+    def test_valid_value_is_saved(self):
+        self._run('Hemoglobin: 13.2 g/dL')
+        self.assertEqual(str(self.patient.hemoglobin), '13.20')

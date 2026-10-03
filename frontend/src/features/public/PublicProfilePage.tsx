@@ -9,7 +9,6 @@ import { InfoRow } from '@/components/patterns'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/misc'
 import { patientService } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
 import type { Patient } from '@/lib/types'
 
 export function PublicProfilePage() {
@@ -74,8 +73,6 @@ export function PublicProfilePage() {
                 <InfoRow label="Blood group" value={<span className="inline-flex items-center gap-1.5"><Droplet className="size-4 text-danger" />{patient.blood_group}</span>} />
                 <InfoRow label="Age" value={patient.age != null ? `${patient.age} yrs` : '—'} />
                 <InfoRow label="Gender" value={patient.gender} />
-                <InfoRow label="Date of birth" value={formatDate(patient.dob)} />
-                <InfoRow label="Phone" value={patient.phone} mono />
                 <InfoRow label="Emergency" value={patient.emergency_contact} mono />
               </dl>
               {patient.address && (

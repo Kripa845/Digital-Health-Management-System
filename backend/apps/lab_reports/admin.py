@@ -23,7 +23,7 @@ class LabReportAdmin(admin.ModelAdmin):
     search_fields = ('name', 'patient__patient_id', 'patient__first_name', 'patient__last_name')
     readonly_fields = (
         'file_type', 'size', 'uploaded_at', 'status', 'error_message',
-        'ocr_text', 'detected_count', 'updated_count', 'unchanged_count', 'processed_at',
+        'detected_count', 'updated_count', 'unchanged_count', 'processed_at',
     )
     inlines = [LabReportFieldInline]
     ordering = ['-uploaded_at']

@@ -1,21 +1,3 @@
-"""
-Seed rich, realistic demo data for local development / demos.
-
-Creates:
-  * 1 admin (username `admin`, password `admin12345`)
-  * 6 doctors across varied departments (with availability schedules)
-  * 10 patients with full medical profiles (Nepali names, varied blood groups)
-  * doctor-patient assignments
-  * appointments in various states
-  * documents, prescriptions and notifications
-  * a few recommendation-history rows
-
-All demo accounts have `must_change_password=False` so they can log in
-immediately. A full credentials table is printed at the end.
-
-Run:  python manage.py seed_demo
-Idempotent: re-running wipes the previously seeded demo users and rebuilds.
-"""
 
 import datetime as dt
 
@@ -26,7 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.patients.models import Patient
-from apps.doctors.models import Doctor, DoctorAssignment, Prescription
+from apps.doctors.models import AccessRequest, Doctor, DoctorAssignment, Prescription
 from apps.appointments.models import Appointment
 from apps.documents.models import Document
 from apps.notifications.models import Notification
@@ -269,7 +251,7 @@ class Command(BaseCommand):
 
     def _create_patients(self):
         created = []
-        for p in PATIENTS:
+        for n, p in enumerate(PATIENTS, start=1):
             user = User.objects.create_user(
                 username=p['username'],
                 email=p['email'],
@@ -281,6 +263,8 @@ class Command(BaseCommand):
             )
             patient = Patient.objects.create(
                 user=user,
+                # Patient IDs are typed by the admin; demo IDs are fixed (hex, like printed cards).
+                patient_id=f'PAT-0DE0{n:04d}',
                 first_name=p['first_name'],
                 middle_name=p['middle_name'],
                 last_name=p['last_name'],
@@ -318,6 +302,11 @@ class Command(BaseCommand):
         n = 0
         for di, pi in pairs:
             DoctorAssignment.objects.create(doctor=doctors[di], patient=patients[pi], status='Active')
+            # Same as an admin assignment through the API: access counts as approved.
+            AccessRequest.objects.create(
+                doctor=doctors[di], patient=patients[pi], status='APPROVED',
+                reason='Assigned by administrator', resolved_at=timezone.now(),
+            )
             n += 1
         self.stdout.write(self.style.SUCCESS(f'Created {n} doctor-patient assignments.'))
 

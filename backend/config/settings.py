@@ -25,7 +25,16 @@ if not SECRET_KEY:
 
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
+_allowed_hosts = os.environ.get('ALLOWED_HOSTS', '')
+if _allowed_hosts:
+    ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts.split(',') if h.strip()]
+elif DEBUG:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]', 'testserver']
+else:
+    raise RuntimeError(
+        "ALLOWED_HOSTS environment variable is not set. "
+        "Set it to your API host name(s) before starting the server in production."
+    )
 
 # Production security hardening
 if not DEBUG:
@@ -117,8 +126,11 @@ AUTHENTICATION_BACKENDS = [
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
      'OPTIONS': {'min_length': 8}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 # REST Framework
@@ -134,7 +146,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ),
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'config.pagination.StandardPagination',
     'PAGE_SIZE': 10,
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
@@ -143,6 +155,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/day',
         'user': '1000/day',
+        'login': os.environ.get('LOGIN_THROTTLE_RATE', '10/min'),
+        'lab_upload': os.environ.get('LAB_UPLOAD_THROTTLE_RATE', '20/hour'),
     },
 }
 
@@ -165,12 +179,16 @@ _cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if _cors_origins:
     CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
     CORS_ALLOW_ALL_ORIGINS = False
-else:
+    CORS_ALLOW_CREDENTIALS = True
+elif DEBUG:
+    # Local development only (Vite also proxies /api, so this is rarely needed).
     CORS_ALLOW_ALL_ORIGINS = True
     CORS_ALLOW_CREDENTIALS = False
-
-if _cors_origins:
-    CORS_ALLOW_CREDENTIALS = True
+else:
+    raise RuntimeError(
+        "CORS_ALLOWED_ORIGINS environment variable is not set. "
+        "Set it to your frontend origin(s) before starting the server in production."
+    )
 
 # Internationalisation
 LANGUAGE_CODE = 'en-us'
@@ -192,7 +210,7 @@ STORAGES = {
 }
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
 
 # Cloudinary
 CLOUDINARY_STORAGE = {
@@ -218,15 +236,40 @@ elif not DEBUG:
         RuntimeWarning,
     )
 
+# Lab report files are encrypted at rest (apps/lab_reports/crypto.py). Set a
+# Fernet key in production; generate one with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Without it a key is derived from SECRET_KEY.
+LAB_REPORT_ENCRYPTION_KEY = os.environ.get('LAB_REPORT_ENCRYPTION_KEY', '')
+# Detect uploaded file types with python-magic (needs the libmagic system library;
+# leave off on Windows, where importing python-magic without it hangs).
+LAB_USE_LIBMAGIC = os.environ.get('LAB_USE_LIBMAGIC', 'False') == 'True'
+# A lab report dated before the patient's latest confirmed report:
+# "warn" (shown with a warning; confirming needs an explicit acknowledgement),
+# "block" (refused, nothing stored) or "allow" (no warning).
+LAB_REPORT_OLDER_DATE_POLICY = os.environ.get('LAB_REPORT_OLDER_DATE_POLICY', 'warn')
+# Numeric report dates such as 04/05/2026: "DMY" (day first, the default) or "MDY".
+LAB_REPORT_DATE_ORDER = os.environ.get('LAB_REPORT_DATE_ORDER', 'DMY')
+# Optional AI fallback: when neither the PDF text nor OCR yields a dashboard
+# value, the page images are sent to Anthropic's API to read them. Off by
+# default because patient data then leaves this server.
+LAB_LLM_FALLBACK = os.environ.get('LAB_LLM_FALLBACK', 'False') == 'True'
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+LAB_LLM_MODEL = os.environ.get('LAB_LLM_MODEL', 'claude-opus-5-5')
+LAB_LLM_TIMEOUT = float(os.environ.get('LAB_LLM_TIMEOUT', '45'))
+
 # Misc
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email Settings
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'merocarecard@gmail.com')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
+# Without a timeout an unreachable SMTP server blocks account creation forever;
+# after it, the admin is shown the new login details instead.
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 15))
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Mero Care Card <merocarecard@gmail.com>')
 

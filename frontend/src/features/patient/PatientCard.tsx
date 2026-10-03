@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion'
-import QRCode from 'react-qr-code'
 import {
   IdCard, Printer, ShieldCheck, Phone, Droplet, ScanLine, HeartPulse,
 } from 'lucide-react'
@@ -10,6 +9,8 @@ import { ActiveStatusBadge } from '@/components/status-badge'
 import { Skeleton } from '@/components/ui/misc'
 import { useAuth } from '@/lib/auth'
 import { formatDate } from '@/lib/utils'
+import { printHealthCard } from '@/lib/qr'
+import { HealthCardQr } from '@/components/health-card-qr'
 
 const QR_ELEMENT_ID = 'patient-card-qr'
 
@@ -20,42 +21,15 @@ export function PatientCard() {
   const fullName = patient
     ? [patient.first_name, patient.middle_name, patient.last_name].filter(Boolean).join(' ')
     : ''
-  const qrLink = patient ? `${window.location.origin}/public-profile/${patient.uuid_token}` : ''
 
   function handlePrint() {
     if (!patient) return
-    const svg = document.getElementById(QR_ELEMENT_ID)
-    const qrMarkup = svg ? new XMLSerializer().serializeToString(svg) : ''
-    const w = window.open('', 'print', 'width=520,height=720')
-    if (!w) return
-    w.document.write(`<!doctype html><html><head><title>Health Card — ${patient.patient_id}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;color:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
-  .card{width:340px;border:2px solid #0d9488;border-radius:20px;padding:26px;text-align:center}
-  .brand{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#0d9488}
-  .name{font-size:20px;font-weight:800;margin-top:4px}
-  .qr{margin:18px auto;width:180px;height:180px;padding:10px;border:1px solid #e2e8f0;border-radius:14px}
-  .qr svg{width:100%;height:100%}
-  .rows{text-align:left;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px}
-  .row{display:flex;justify-content:space-between;font-size:13px;padding:4px 0}
-  .lbl{color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.08em;font-weight:700}
-  .val{font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .foot{margin-top:14px;font-size:10px;color:#64748b}
-</style></head><body onload="window.print();setTimeout(function(){window.close()},300)">
-  <div class="card">
-    <div class="brand">Mero Care Card</div>
-    <div class="name">${fullName}</div>
-    <div class="qr">${qrMarkup}</div>
-    <div class="rows">
-      <div class="row"><span class="lbl">Patient ID</span><span class="val">${patient.patient_id}</span></div>
-      <div class="row"><span class="lbl">Blood group</span><span class="val">${patient.blood_group}</span></div>
-      <div class="row"><span class="lbl">Emergency</span><span class="val">${patient.emergency_contact}</span></div>
-    </div>
-    <div class="foot">Scan reveals identity essentials only — never private records.</div>
-  </div>
-</body></html>`)
-    w.document.close()
+    printHealthCard(QR_ELEMENT_ID, {
+      fullName,
+      patientId: patient.patient_id,
+      bloodGroup: patient.blood_group,
+      emergencyContact: patient.emergency_contact,
+    })
   }
 
   if (loading) {
@@ -122,7 +96,7 @@ export function PatientCard() {
 
             <div className="relative mt-7 flex flex-col items-center gap-5 sm:flex-row sm:items-center">
               <div className="grid size-40 shrink-0 place-items-center rounded-[var(--radius-lg)] border border-border bg-white p-3 shadow-[var(--shadow-sm)]">
-                <QRCode id={QR_ELEMENT_ID} value={qrLink} size={256} level="M" style={{ height: '100%', width: '100%' }} />
+                <HealthCardQr id={QR_ELEMENT_ID} uuidToken={patient.uuid_token} />
               </div>
               <div className="min-w-0 flex-1 space-y-4 text-center sm:text-left">
                 <div>

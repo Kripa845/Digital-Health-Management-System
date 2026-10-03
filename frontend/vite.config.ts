@@ -16,9 +16,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // VITE_PROXY_TARGET lets the end-to-end tests point at their own backend.
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
-      '/media': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/api': { target: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000', changeOrigin: true },
+      '/media': { target: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000', changeOrigin: true },
     },
   },
 })

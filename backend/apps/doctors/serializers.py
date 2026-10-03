@@ -1,28 +1,19 @@
 import re
-import secrets
-import string
 import json
 from datetime import date
 from django.db import transaction
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from apps.doctors.models import Doctor, DoctorAssignment, Prescription, AccessRequest
-from apps.users.username import doctor_username as _doctor_username
-from apps.users.username import normalize_name as _normalize_name
+from apps.users.credentials import generate_password
+from apps.users.username import (
+    doctor_username as _doctor_username,
+    is_valid_person_name,
+    normalize_name as _normalize_name,
+    unique_username,
+)
 
 User = get_user_model()
-
-
-def _generate_password(length: int = 10) -> str:
-    alphabet = string.ascii_letters + string.digits
-    while True:
-        pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
-        if (
-            any(c.isupper() for c in pwd)
-            and any(c.islower() for c in pwd)
-            and any(c.isdigit() for c in pwd)
-        ):
-            return pwd
 
 
 class UserNestedCharField(serializers.CharField):
@@ -46,8 +37,6 @@ class DoctorSerializer(serializers.ModelSerializer):
     login_username = serializers.CharField(source='user.username', read_only=True)
     account_active = serializers.BooleanField(source='user.is_active', read_only=True)
 
-    generated_username = serializers.SerializerMethodField()
-    generated_password = serializers.SerializerMethodField()
 
     class Meta:
         model = Doctor
@@ -59,7 +48,6 @@ class DoctorSerializer(serializers.ModelSerializer):
             'availability_schedule', 'registration_date',
             'username', 'password',
             'login_username', 'account_active',
-            'generated_username', 'generated_password',
             'user_id',
         )
         read_only_fields = (
@@ -67,20 +55,14 @@ class DoctorSerializer(serializers.ModelSerializer):
             'login_username', 'account_active', 'user_id',
         )
 
-    def get_generated_username(self, obj):
-        return getattr(obj, '_generated_username', None)
-
-    def get_generated_password(self, obj):
-        return getattr(obj, '_generated_password', None)
-
     def _validate_name(self, value, label):
         value = (value or '').strip()
         if len(value) < 2:
             raise serializers.ValidationError(f"{label} must be at least 2 characters long.")
         if len(value) > 50:
             raise serializers.ValidationError(f"{label} cannot exceed 50 characters.")
-        if not re.match(r'^[A-Za-z ]+$', value):
-            raise serializers.ValidationError(f"{label} can contain letters only.")
+        if not is_valid_person_name(value):
+            raise serializers.ValidationError(f"{label} can contain letters, spaces, hyphens, apostrophes and dots only.")
         return _normalize_name(value)
 
     def validate_first_name(self, value):
@@ -145,18 +127,14 @@ class DoctorSerializer(serializers.ModelSerializer):
         username   = validated_data.pop('username', None)
         password   = validated_data.pop('password', None)
 
-        final_password = password if password else _generate_password(10)
+        final_password = password if password else generate_password(10)
 
         with transaction.atomic():
             from apps.doctors.models import Doctor as DoctorModel
             doctor_id = DoctorModel.generate_doctor_id()
 
             if username:
-                final_username = username
-                counter = 2
-                while User.objects.filter(username=final_username).exists():
-                    final_username = f"{username}{counter}"
-                    counter += 1
+                final_username = unique_username(username)
             else:
                 final_username = _doctor_username(first_name, last_name, doctor_id)
 
@@ -193,6 +171,22 @@ class DoctorSerializer(serializers.ModelSerializer):
             user.email = new_email or ''
             user.save()
             return super().update(instance, validated_data)
+
+
+class PublicDoctorSerializer(serializers.ModelSerializer):
+    """What patients and anonymous visitors may see about a doctor: no contact
+    details, date of birth, licence number or login details."""
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+
+    class Meta:
+        model = Doctor
+        fields = (
+            'id', 'doctor_id', 'first_name', 'last_name',
+            'department', 'specialization', 'gender', 'photo', 'status',
+            'availability_schedule',
+        )
+        read_only_fields = fields
 
 
 class DoctorAssignmentSerializer(serializers.ModelSerializer):

@@ -8,8 +8,23 @@ User = get_user_model()
 
 
 def normalize_name(value: str) -> str:
-  
-    return " ".join(word.capitalize() for word in (value or "").split())
+    """Collapse spaces and upper-case each word's first letter, keeping the rest
+    as typed ("McDonald" stays "McDonald")."""
+    return " ".join(word[:1].upper() + word[1:] for word in (value or "").split())
+
+
+_NAME_PUNCTUATION = set(" '-.")
+
+
+def is_valid_person_name(value: str) -> bool:
+    """Letters in any script (including Devanagari vowel signs), spaces,
+    hyphens, apostrophes and dots. Must contain at least one letter."""
+    if not value or not any(unicodedata.category(c).startswith('L') for c in value):
+        return False
+    return all(
+        unicodedata.category(c)[0] in ('L', 'M') or c in _NAME_PUNCTUATION
+        for c in value
+    )
 
 
 def slugify_name(*parts: str) -> str:

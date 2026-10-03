@@ -1,0 +1,7 @@
+# Development and test tools (not installed in production).
+-r requirements.txt
+iniconfig==2.3.0
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==9.1.1
+pytest-django==4.12.0

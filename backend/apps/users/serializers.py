@@ -2,17 +2,12 @@ import re
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 User = get_user_model()
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-
-    default_error_messages = {
-        'no_active_account': (
-            'No account found with these credentials. '
-            'Please check your username and password and try again.'
-        )
-    }
 
     @classmethod
     def get_token(cls, user):
@@ -29,42 +24,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             token['uuid_token'] = str(user.patient_profile.uuid_token)
 
         return token
-
-    def validate(self, attrs):
-        username = attrs.get('username', '').strip()
-        attrs['username'] = username
-
-        user_exists = User.objects.filter(username=username).exists()
-
-        if username and not user_exists:
-            user_case_insensitive = User.objects.filter(username__iexact=username).first()
-            if user_case_insensitive:
-                raise serializers.ValidationError(
-                    {'detail': f'Username not found. Did you mean "{user_case_insensitive.username}"? '
-                               'Usernames are case-sensitive.'},
-                    code='no_active_account',
-                )
-            raise serializers.ValidationError(
-                {'detail': f'No account found with username "{username}". '
-                           'Please use the credentials provided by your administrator.'},
-                code='no_active_account',
-            )
-
-        data = super().validate(attrs)
-
-        data['role'] = self.user.role
-        data['username'] = self.user.username
-        data['first_name'] = self.user.first_name
-        data['last_name'] = self.user.last_name
-        data['must_change_password'] = self.user.must_change_password
-
-        if self.user.role == 'DOCTOR' and hasattr(self.user, 'doctor_profile'):
-            data['profile_id'] = self.user.doctor_profile.doctor_id
-        elif self.user.role == 'PATIENT' and hasattr(self.user, 'patient_profile'):
-            data['profile_id'] = self.user.patient_profile.patient_id
-            data['uuid_token'] = str(self.user.patient_profile.uuid_token)
-
-        return data
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -83,6 +42,10 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Password must be at least 8 characters and include letters and numbers."
             )
+        try:
+            validate_password(value, user=self.context['request'].user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
         return value
 
     def validate(self, attrs):
@@ -96,6 +59,13 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class AdminCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+
+    def validate_password(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
 
     class Meta:
         model = User

@@ -1,14 +1,16 @@
 # OCR dependencies for Intelligent Lab Report Processing
 pytesseract==0.3.13
-pdf2image==1.17.0
-pdfminer-six==20231228
+# PDF text layer and page images (no Poppler needed)
+pymupdf==1.28.2
+# Optional AI fallback for scanned reports (LAB_LLM_FALLBACK, off by default)
+anthropic==1.11.0
 asgiref==3.12.1
 certifi==2026.7.22
 charset-normalizer==3.4.9
 cloudinary==1.45.0
 colorama==0.4.6
 dj-database-url==3.1.2
-Django==6.0.7
+django==6.0.7
 django-cloudinary-storage==0.3.0
 django-cors-headers==4.9.0
 django-filter==26.1
@@ -16,16 +18,10 @@ djangorestframework==3.17.1
 djangorestframework_simplejwt==5.5.1
 gunicorn==23.0.0
 idna==3.18
-iniconfig==2.3.0
 packaging==26.2
 pillow==12.3.0
-pluggy==1.6.0
 psycopg2-binary==2.9.12
-Pygments==2.20.0
 PyJWT==2.13.0
-pytest==9.1.1
-pytest-django==4.12.0
-qrcode==8.2
 python-dotenv==1.2.2
 requests==2.34.2
 six==1.17.0
@@ -33,3 +29,12 @@ sqlparse==0.5.5
 tzdata==2026.3
 urllib3==2.7.0
 whitenoise==6.12.0
+cryptography==50.0.2
+rapidfuzz==3.14.6
+python-magic==0.4.27
+# Smart symptom check (ml/): Naive Bayes model, TOPSIS ranking, training/evaluation charts
+scikit-learn==1.8.0
+pandas==2.2.3
+numpy==2.2.1
+joblib==1.5.3
+matplotlib==3.10.9

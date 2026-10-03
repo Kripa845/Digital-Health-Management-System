@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 import os
+import uuid
 
 def validate_file_extension_and_size(value):
     ext = os.path.splitext(value.name)[1].lower()
@@ -11,13 +12,18 @@ def validate_file_extension_and_size(value):
     if value.size > 5 * 1024 * 1024:
         raise ValidationError('File size exceeds the 5MB limit.')
 
+def document_upload_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return f'patient_documents/{uuid.uuid4().hex}{ext}'
+
+
 class Document(models.Model):
     REPORT_TYPE_CHOICES = [
         ('MEDICAL', 'Medical Report'),
         ('ADDITIONAL', 'Additional Report'),
     ]
     patient = models.ForeignKey('patients.Patient', on_delete=models.CASCADE, related_name='documents')
-    file = models.FileField(upload_to='patient_documents/', validators=[validate_file_extension_and_size])
+    file = models.FileField(upload_to=document_upload_path, validators=[validate_file_extension_and_size])
     name = models.CharField(max_length=255)
     file_type = models.CharField(max_length=10, blank=True)
     size = models.IntegerField(help_text="File size in bytes", blank=True, null=True)
@@ -31,7 +37,7 @@ class Document(models.Model):
             ext = os.path.splitext(self.file.name)[1].lower().replace('.', '')
             self.file_type = ext.upper()
             if not self.name:
-                self.name = os.path.basename(self.file.name)
+                self.name = os.path.basename(self.file.name)[:255]
         super().save(*args, **kwargs)
 
     def __str__(self):

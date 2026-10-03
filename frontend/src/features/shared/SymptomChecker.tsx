@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Stethoscope, Activity, ArrowRight, TriangleAlert } from 'lucide-react'
+import { Sparkles, Stethoscope, Activity, ArrowRight, TriangleAlert, Info, BrainCircuit } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/input'
@@ -10,10 +10,20 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/misc'
 import { recommendationService } from '@/lib/api'
-import type { Recommendation } from '@/lib/types'
+import type { Recommendation, SmartCheckResult, SmartCheckStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const PAIN_HINTS = ['No pain', 'Mild', 'Uncomfortable', 'Distressing', 'Intense', 'Severe']
+const DISCLAIMER = 'Suggestion only, not a medical diagnosis.'
+
+/** Shown when the smart check is not confident and the keyword match is used instead. */
+const FALLBACK_MESSAGES: Record<Exclude<SmartCheckStatus, 'ok'>, string> = {
+  not_enough_info: "We need a little more information. Please add more symptoms (at least two) for a more specific suggestion. Here is a general match based on what you wrote.",
+  low_confidence: "These symptoms could point to several areas. Adding more symptoms will help. Here is a general match based on what you wrote.",
+  model_unavailable: 'The smart check is not available right now. Here is a general match based on what you wrote.',
+}
+
+const pct = (p: number) => `${Math.round(p * 100)}%`
 
 export function SymptomChecker({ compact = false, patientId }: { compact?: boolean; patientId?: number }) {
   const [symptoms, setSymptoms] = useState('')
@@ -22,6 +32,8 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
   const [history, setHistory] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Recommendation | null>(null)
+  const [smart, setSmart] = useState<SmartCheckResult | null>(null)
+  const [fallbackNote, setFallbackNote] = useState('')
 
   const painHint = PAIN_HINTS[Math.min(PAIN_HINTS.length - 1, Math.round((pain / 10) * (PAIN_HINTS.length - 1)))]
 
@@ -29,8 +41,23 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
     e.preventDefault()
     if (!symptoms.trim()) return toast.error('Please describe your symptoms first.')
     if (!age || age < 1 || age > 120) return toast.error('Enter an age between 1 and 120.')
-    setLoading(true); setResult(null)
+    setLoading(true); setResult(null); setSmart(null); setFallbackNote('')
     try {
+      // 1. Smart check (Naive Bayes + TOPSIS).
+      let smartStatus: SmartCheckStatus = 'model_unavailable'
+      try {
+        const smartResult = await recommendationService.smartCheck({ text: symptoms, patient_id: patientId })
+        if (smartResult.status === 'ok') {
+          setSmart(smartResult)
+          toast.success('We found a care suggestion for you.')
+          return
+        }
+        smartStatus = smartResult.status
+      } catch {
+        // Smart check failed (e.g. server error): use the keyword match below.
+      }
+      // 2. Fallback: the existing keyword-based match.
+      setFallbackNote(FALLBACK_MESSAGES[smartStatus])
       const data = await recommendationService.create({
         symptoms, pain_level: pain, age: Number(age), medical_history: history, patient_id: patientId,
       })
@@ -93,7 +120,17 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
 
       <div className="relative">
         <AnimatePresence mode="wait">
-          {result ? (
+          {smart ? (
+            <motion.div
+              key="smart"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <SmartResultCard result={smart} />
+            </motion.div>
+          ) : result ? (
             <motion.div
               key="result"
               initial={{ opacity: 0, y: 16 }}
@@ -114,6 +151,12 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
                   {result.confidence != null && <Progress value={result.confidence} className="mt-3" />}
                 </div>
                 <CardContent className="space-y-4 p-6">
+                  {fallbackNote && (
+                    <div role="status" className="flex items-start gap-2.5 rounded-[var(--radius-md)] border border-info/30 bg-info-soft p-3 text-sm text-info">
+                      <Info className="mt-0.5 size-4 shrink-0" />
+                      <p className="text-pretty">{fallbackNote}</p>
+                    </div>
+                  )}
                   {highSeverity && (
                     <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
                       <TriangleAlert className="mt-0.5 size-4 shrink-0" />
@@ -142,6 +185,7 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
                       ))}
                     </div>
                   )}
+                  <p className="text-xs text-subtle-foreground">{DISCLAIMER}</p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -165,5 +209,68 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
         </AnimatePresence>
       </div>
     </div>
+  )
+}
+
+
+/** Result of the smart check: likely area, possible illnesses and TOPSIS-ranked doctors. */
+function SmartResultCard({ result }: { result: SmartCheckResult }) {
+  const deptPct = Math.round((result.dept_probability ?? 0) * 100)
+  return (
+    <Card className="overflow-hidden">
+      <div className="border-b border-border bg-primary-soft/50 p-6">
+        <div className="flex items-center justify-between">
+          <Badge variant="primary"><BrainCircuit />Smart check</Badge>
+          <span className="text-xs font-medium text-muted-foreground">{deptPct}% likely</span>
+        </div>
+        <p className="mt-3 font-display text-2xl font-semibold">Likely area: {result.department} ({deptPct}%)</p>
+        <Progress value={deptPct} className="mt-3" />
+        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-warning">
+          <TriangleAlert className="size-3.5 shrink-0" />{result.disclaimer || DISCLAIMER}
+        </p>
+      </div>
+      <CardContent className="space-y-5 p-6">
+        {result.symptoms.length > 0 && (
+          <p className="text-sm text-muted-foreground text-pretty">
+            Symptoms recognised: <span className="font-medium text-foreground">{result.symptoms.join(', ')}</span>
+          </p>
+        )}
+
+        {!!result.illnesses?.length && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">Possible illnesses</p>
+            <ul className="space-y-1.5">
+              {result.illnesses.map((ill) => (
+                <li key={ill.name} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate">{ill.name}</span>
+                  <span className="shrink-0 font-medium tabular-nums">{pct(ill.probability)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">Suggested clinicians</p>
+          {result.doctors_note && <p className="text-xs text-muted-foreground text-pretty">{result.doctors_note}</p>}
+          {result.doctors?.map((doc, i) => (
+            <div key={doc.id} className={cn(
+              'flex items-center gap-3 rounded-[var(--radius-md)] border p-3',
+              i === 0 ? 'border-primary/30 bg-primary-soft/30' : 'border-border',
+            )}>
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-2 text-muted-foreground">
+                <Stethoscope className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">Dr. {doc.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{doc.specialization} · {doc.department}</p>
+                <p className="truncate text-xs text-subtle-foreground">{doc.reason}</p>
+              </div>
+              {i === 0 && <Badge variant="success">Best match</Badge>}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

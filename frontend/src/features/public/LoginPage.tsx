@@ -47,7 +47,8 @@ export function LoginPage() {
         </div>
         <form onSubmit={submit} className="mt-8 space-y-4">
           <Field label="Username" htmlFor="username">
-            <Input id="username" autoFocus autoComplete="username" value={username}
+            <Input id="username" autoFocus autoComplete="username" autoCapitalize="none" autoCorrect="off"
+              spellCheck={false} value={username}
               onChange={(e) => setUsername(e.target.value)} />
           </Field>
           <Field label="Password" htmlFor="password">

@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import QRCode from 'react-qr-code'
 import {
   Users, Search, Plus, MoreHorizontal, QrCode, Pencil, Eye,
-  RefreshCw, Trash2, TriangleAlert, FlaskConical,
+  RefreshCw, Trash2, TriangleAlert, FlaskConical, KeyRound, Printer, Shuffle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -22,15 +21,23 @@ import { PageHeader, DataState, EmptyState, ListSkeleton, InfoRow } from '@/comp
 import { ActiveStatusBadge } from '@/components/status-badge'
 import { patientService, labReportService } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import { printHealthCard, publicProfileUrl } from '@/lib/qr'
+import { HealthCardQr } from '@/components/health-card-qr'
 import type { Patient } from '@/lib/types'
 import { LabReportUploadDialog } from '@/features/lab-reports/LabReportUploadDialog'
 import { LabReportRow } from '@/features/lab-reports/LabReportRow'
 import {
-  BLOOD_GROUPS, GENDERS, STATUSES, NEPAL_PHONE, NAME_RE, formatName, apiError, useDebounced, CopyButton,
-  tableHeadClass,
+  CopyButton, CredentialRow, CredentialsDialog, type GeneratedCreds,
 } from './admin-common'
+import {
+  BLOOD_GROUPS, GENDERS, STATUSES, NEPAL_PHONE, NAME_RE, PATIENT_ID_CODE_RE, formatName, formatPatientId,
+  patientIdCode, randomPatientId,
+  apiError, useDebounced, tableHeadClass,
+} from './admin-utils'
 
 type PatientForm = {
+  /** The code after "PAT-", e.g. 79028232. */
+  patient_id: string
   first_name: string
   middle_name: string
   last_name: string
@@ -49,13 +56,14 @@ type PatientForm = {
 }
 
 const EMPTY_FORM: PatientForm = {
-  first_name: '', middle_name: '', last_name: '', dob: '', gender: 'Male', blood_group: 'A+',
+  patient_id: '', first_name: '', middle_name: '', last_name: '', dob: '', gender: 'Male', blood_group: 'A+',
   phone: '', emergency_contact: '', email: '', address: '', height: '', weight: '',
   allergies: '', current_medication: '', status: 'Active',
 }
 
 function toForm(p: Patient): PatientForm {
   return {
+    patient_id: patientIdCode(p.patient_id),
     first_name: p.first_name ?? '',
     middle_name: p.middle_name ?? '',
     last_name: p.last_name ?? '',
@@ -76,6 +84,8 @@ function toForm(p: Patient): PatientForm {
 
 function validate(f: PatientForm): Record<string, string> {
   const e: Record<string, string> = {}
+  if (!f.patient_id) e.patient_id = 'Patient ID is required.'
+  else if (!PATIENT_ID_CODE_RE.test(f.patient_id)) e.patient_id = '4 to 12 letters or digits with at least 4 digits, e.g. 79028232.'
   if (!f.first_name.trim()) e.first_name = 'First name is required.'
   else if (f.first_name.trim().length < 2) e.first_name = 'First name must be at least 2 letters.'
   else if (!NAME_RE.test(f.first_name.trim())) e.first_name = 'Letters only — no numbers or symbols.'
@@ -98,11 +108,16 @@ function validate(f: PatientForm): Record<string, string> {
 }
 
 function PatientFormDialog({
-  open, onOpenChange, patient,
+  open, onOpenChange, patient, onCreated,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   patient: Patient | null
+  /**
+   * Called after a new patient is registered, with the login details when the
+   * welcome email failed and the admin must hand them over.
+   */
+  onCreated?: (patient: Patient, creds: GeneratedCreds | null) => void
 }) {
   const qc = useQueryClient()
   const isEdit = !!patient
@@ -128,9 +143,9 @@ function PatientFormDialog({
       const fd = new FormData()
       const entries = Object.entries(form) as [keyof PatientForm, string][]
       for (const [k, v] of entries) {
-        // On edit (PATCH) only send fields that carry a value.
-        if (isEdit && v === '') continue
-        fd.append(k, v)
+        // On edit (PATCH) only send fields that carry a value, and the patient ID only when it changed.
+        if (isEdit && (v === '' || (k === 'patient_id' && v === patientIdCode(patient!.patient_id)))) continue
+        fd.append(k, k === 'patient_id' ? `PAT-${v}` : v)
       }
       if (photo) fd.append('photo', photo)
       return isEdit ? patientService.update(patient!.id, fd) : patientService.create(fd)
@@ -141,11 +156,31 @@ function PatientFormDialog({
       onOpenChange(false)
       if (isEdit) {
         toast.success('Patient updated.')
+        return
+      }
+      let creds: GeneratedCreds | null = null
+      if (data.generated_username) {
+        toast.warning(data.message || 'Patient registered, but the welcome email could not be sent.')
+        creds = {
+          name: `${form.first_name} ${form.last_name}`.trim(),
+          username: data.generated_username,
+          password: data.generated_password ?? '',
+        }
       } else {
         toast.success(data.message || 'Patient registered.')
       }
+      if (data.patient) onCreated?.(data.patient as Patient, creds)
     },
-    onError: (err) => toast.error(apiError(err, 'Could not save patient.')),
+    onError: (err) => {
+      // Show "already exists" / format errors from the server under the Patient ID field.
+      const idError = (err as { response?: { data?: { patient_id?: string[] | string } } })?.response?.data?.patient_id
+      if (idError) {
+        setErrors((e) => ({ ...e, patient_id: Array.isArray(idError) ? idError.join(' ') : idError }))
+        toast.error('Please choose a different patient ID.')
+        return
+      }
+      toast.error(apiError(err, 'Could not save patient.'))
+    },
   })
 
   function submit(e: React.FormEvent) {
@@ -170,6 +205,35 @@ function PatientFormDialog({
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-5">
+          <Field label="Patient ID" htmlFor="patient-id" required error={errors.patient_id}
+            hint={isEdit
+              ? 'Changing it means printed cards and lab reports showing the old ID no longer match. The QR code keeps working.'
+              : 'Type only the number; PAT- is added for you. Printed on the card and matched on lab reports.'}>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-muted-foreground">
+                  PAT-
+                </span>
+                <Input
+                  id="patient-id"
+                  value={form.patient_id}
+                  onChange={(e) => set('patient_id', formatPatientId(e.target.value))}
+                  placeholder="79028232"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  maxLength={16}
+                  className="pl-12 font-mono"
+                />
+              </div>
+              {!isEdit && (
+                <Button type="button" variant="secondary" onClick={() => set('patient_id', randomPatientId())}>
+                  <Shuffle className="size-4" />Generate
+                </Button>
+              )}
+            </div>
+          </Field>
+
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="First name" required error={errors.first_name}>
               <Input value={form.first_name} onChange={(e) => set('first_name', formatName(e.target.value))}
@@ -248,10 +312,44 @@ function PatientFormDialog({
   )
 }
 
+const ADMIN_QR_ELEMENT_ID = 'admin-patient-qr'
+
 function QrDialog({ patient, onClose }: { patient: Patient | null; onClose: () => void }) {
-  const link = patient ? `${window.location.origin}/public-profile/${patient.uuid_token}` : ''
+  const qc = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const [token, setToken] = useState<string | null>(null)
+  const uuid = token ?? patient?.uuid_token ?? ''
+  const link = patient ? publicProfileUrl(uuid) : ''
+
+  function print() {
+    if (!patient) return
+    printHealthCard(ADMIN_QR_ELEMENT_ID, {
+      fullName: [patient.first_name, patient.middle_name, patient.last_name].filter(Boolean).join(' '),
+      patientId: patient.patient_id,
+      bloodGroup: patient.blood_group,
+      emergencyContact: patient.emergency_contact,
+    })
+  }
+
+  const reissue = useMutation({
+    mutationFn: () => patientService.regenerateQr(patient!.id),
+    onSuccess: (data) => {
+      setToken(data.uuid_token)
+      setConfirming(false)
+      qc.invalidateQueries({ queryKey: ['admin', 'patients'] })
+      toast.success('New QR code issued. The old card no longer works.')
+    },
+    onError: (err) => toast.error(apiError(err, 'Could not issue a new QR code.')),
+  })
+
+  function close() {
+    setConfirming(false)
+    setToken(null)
+    onClose()
+  }
+
   return (
-    <Dialog open={!!patient} onOpenChange={(o) => { if (!o) onClose() }}>
+    <Dialog open={!!patient} onOpenChange={(o) => { if (!o) close() }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Health card QR</DialogTitle>
@@ -259,8 +357,8 @@ function QrDialog({ patient, onClose }: { patient: Patient | null; onClose: () =
         </DialogHeader>
         {patient && (
           <div className="flex flex-col items-center gap-4">
-            <div className="rounded-[var(--radius-lg)] border border-border bg-white p-4">
-              <QRCode value={link} size={180} level="M" />
+            <div className="size-[212px] rounded-[var(--radius-lg)] border border-border bg-white p-4">
+              <HealthCardQr id={ADMIN_QR_ELEMENT_ID} uuidToken={uuid} size={180} />
             </div>
             <div className="w-full">
               <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface-2 px-3.5 py-2.5">
@@ -270,8 +368,34 @@ function QrDialog({ patient, onClose }: { patient: Patient | null; onClose: () =
             </div>
           </div>
         )}
+        {confirming && (
+          <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-warning-soft px-3.5 py-2.5 text-warning">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            <p className="text-xs leading-relaxed">
+              Issue a new QR code if the card was lost. The current card stops working immediately and the
+              patient needs a reprinted card.
+            </p>
+          </div>
+        )}
         <DialogFooter>
-          <DialogClose asChild><Button variant="secondary" className="w-full sm:w-auto">Close</Button></DialogClose>
+          {confirming ? (
+            <>
+              <Button variant="secondary" onClick={() => setConfirming(false)}>Keep current card</Button>
+              <Button variant="danger" loading={reissue.isPending} onClick={() => reissue.mutate()}>
+                Issue new QR
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setConfirming(true)}>
+                <RefreshCw className="size-4" />Card lost?
+              </Button>
+              <Button variant="secondary" onClick={print}>
+                <Printer className="size-4" />Print card
+              </Button>
+              <DialogClose asChild><Button className="w-full sm:w-auto">Close</Button></DialogClose>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -289,6 +413,10 @@ export function AdminPatients() {
   const [viewPatient, setViewPatient] = useState<Patient | null>(null)
   const [qrPatient, setQrPatient] = useState<Patient | null>(null)
   const [deletePatient, setDeletePatient] = useState<Patient | null>(null)
+  const [creds, setCreds] = useState<GeneratedCreds | null>(null)
+  // A new patient's QR waits until the login details dialog is closed.
+  const [pendingQr, setPendingQr] = useState<Patient | null>(null)
+  const [resetResult, setResetResult] = useState<{ name: string; password: string } | null>(null)
 
   const params = useMemo(() => ({
     search: debouncedSearch || undefined,
@@ -310,6 +438,13 @@ export function AdminPatients() {
     mutationFn: (p: Patient) => patientService.toggleStatus(p.id),
     onSuccess: () => { toast.success('Status updated.'); invalidate() },
     onError: (err) => toast.error(apiError(err, 'Could not update status.')),
+  })
+  const resetMut = useMutation({
+    mutationFn: (p: Patient) => patientService.resetPassword(p.id),
+    onSuccess: (data: { new_password?: string }, p) => {
+      setResetResult({ name: `${p.first_name} ${p.last_name}`.trim(), password: data?.new_password ?? '' })
+    },
+    onError: (err) => toast.error(apiError(err, 'Could not reset password.')),
   })
   const deleteMut = useMutation({
     mutationFn: (p: Patient) => patientService.remove(p.id),
@@ -391,6 +526,7 @@ export function AdminPatients() {
                         onView={() => setViewPatient(p)}
                         onEdit={() => setEditPatient(p)}
                         onToggle={() => toggleMut.mutate(p)}
+                        onReset={() => resetMut.mutate(p)}
                         onDelete={() => setDeletePatient(p)}
                       />
                     </td>
@@ -417,6 +553,7 @@ export function AdminPatients() {
                   onView={() => setViewPatient(p)}
                   onEdit={() => setEditPatient(p)}
                   onToggle={() => toggleMut.mutate(p)}
+                  onReset={() => resetMut.mutate(p)}
                   onDelete={() => setDeletePatient(p)}
                 />
               </div>
@@ -431,11 +568,40 @@ export function AdminPatients() {
       </DataState>
 
       {/* Dialogs */}
-      <PatientFormDialog open={addOpen} onOpenChange={setAddOpen} patient={null} />
+      <PatientFormDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        patient={null}
+        onCreated={(p, c) => {
+          if (c) { setCreds(c); setPendingQr(p) } else setQrPatient(p)
+        }}
+      />
+      <CredentialsDialog
+        creds={creds}
+        onClose={() => { setCreds(null); if (pendingQr) { setQrPatient(pendingQr); setPendingQr(null) } }}
+        emailed={false}
+      />
       <PatientFormDialog open={!!editPatient} onOpenChange={(o) => { if (!o) setEditPatient(null) }} patient={editPatient} />
       <QrDialog patient={qrPatient} onClose={() => setQrPatient(null)} />
       <PatientDetailsDialog patient={viewPatient} onClose={() => setViewPatient(null)}
         onEdit={() => { const p = viewPatient; setViewPatient(null); setEditPatient(p) }} />
+
+      {/* Reset password result */}
+      <Dialog open={!!resetResult} onOpenChange={(o) => { if (!o) setResetResult(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Password reset</DialogTitle>
+            <DialogDescription>
+              A new temporary password for {resetResult?.name} has been generated. Give it to the patient; they
+              will be asked to change it when they next sign in.
+            </DialogDescription>
+          </DialogHeader>
+          {resetResult?.password && <CredentialRow label="New password" value={resetResult.password} />}
+          <DialogFooter>
+            <DialogClose asChild><Button className="w-full sm:w-auto">Done</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirm */}
       <Dialog open={!!deletePatient} onOpenChange={(o) => { if (!o) setDeletePatient(null) }}>
@@ -627,13 +793,14 @@ function PatientDetailsDialog({
 }
 
 function RowActions({
-  patient, onQr, onView, onEdit, onToggle, onDelete,
+  patient, onQr, onView, onEdit, onToggle, onReset, onDelete,
 }: {
   patient: Patient
   onQr: () => void
   onView: () => void
   onEdit: () => void
   onToggle: () => void
+  onReset: () => void
   onDelete: () => void
 }) {
   return (
@@ -646,6 +813,7 @@ function RowActions({
         <DropdownMenuItem onSelect={onView}><Eye />View details</DropdownMenuItem>
         <DropdownMenuItem onSelect={onEdit}><Pencil />Edit</DropdownMenuItem>
         <DropdownMenuItem onSelect={onToggle}><RefreshCw />{patient.status === 'Active' ? 'Set inactive' : 'Set active'}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onReset}><KeyRound />Reset password</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem destructive onSelect={onDelete}><Trash2 />Delete</DropdownMenuItem>
       </DropdownMenuContent>

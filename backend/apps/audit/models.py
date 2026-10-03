@@ -14,6 +14,15 @@ class AuditLog(models.Model):
             models.Index(fields=['user', '-timestamp']),
         ]
 
+    def save(self, *args, **kwargs):
+        # Append-only: an entry can be written once and never changed.
+        if self.pk is not None and not self._state.adding:
+            raise PermissionError('Audit log entries cannot be modified.')
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise PermissionError('Audit log entries cannot be deleted.')
+
     def __str__(self):
         user_str = self.user.username if self.user else "Anonymous"
         return f"{user_str} - {self.action} at {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"

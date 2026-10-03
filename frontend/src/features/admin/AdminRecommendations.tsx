@@ -9,7 +9,12 @@ import { recommendationService, patientService } from '@/lib/api'
 import type { Recommendation, Patient } from '@/lib/types'
 import { formatDateTime } from '@/lib/utils'
 import { SymptomChecker } from '@/features/shared/SymptomChecker'
-import { ConfidenceBadge, tableHeadClass } from './admin-common'
+import {
+  ConfidenceBadge,
+} from './admin-common'
+import {
+  tableHeadClass,
+} from './admin-utils'
 
 function doctorName(r: Recommendation) {
   const d = r.recommended_doctor_detail

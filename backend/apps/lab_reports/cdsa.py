@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.utils import timezone
 
 from apps.lab_reports.extractor import ExtractedField, validate_numeric_result, validate_blood_pressure
 from apps.lab_reports.models import LabReport, LabReportField
+from apps.lab_reports.units import convert
 
 logger = logging.getLogger(__name__)
 
 
+# Fields an OCR result may write into the patient record. Blood group is
+# deliberately absent: it is shown on the public emergency profile, so a misread
+# is dangerous. A detected blood group is reported for review, never applied.
 _UPDATABLE_PATIENT_FIELDS: frozenset[str] = frozenset({
     'height',
     'weight',
@@ -23,7 +29,6 @@ _UPDATABLE_PATIENT_FIELDS: frozenset[str] = frozenset({
     'cholesterol_hdl',
     'cholesterol_ldl',
     'triglycerides',
-    'blood_group',
     'heart_rate',
     'spo2',
     'temperature',
@@ -46,37 +51,9 @@ _UPDATABLE_PATIENT_FIELDS: frozenset[str] = frozenset({
     'esr',
 })
 
+_REVIEW_ONLY_PATIENT_FIELDS: frozenset[str] = frozenset({'blood_group'})
 
-_DECIMAL_PATIENT_FIELDS: frozenset[str] = frozenset({
-    'height',
-    'weight',
-    'hemoglobin',
-    'blood_sugar_fasting',
-    'blood_sugar_random',
-    'cholesterol_total',
-    'cholesterol_hdl',
-    'cholesterol_ldl',
-    'triglycerides',
-    'spo2',
-    'temperature',
-    'hba1c',
-    'serum_creatinine',
-    'blood_urea',
-    'uric_acid',
-    'ssgpt_alt',
-    'ssgot_ast',
-    'bilirubin_total',
-    'tsh',
-    't3',
-    't4',
-    'sodium',
-    'potassium',
-    'wbc_count',
-    'rbc_count',
-    'platelet_count',
-    'hematocrit',
-    'esr',
-})
+_DECIMAL_PATIENT_FIELDS: frozenset[str] = _UPDATABLE_PATIENT_FIELDS - {'blood_pressure', 'heart_rate'}
 
 
 @dataclass
@@ -87,7 +64,7 @@ class FieldResult:
     previous_value: str
     unit: str
     reference_range: str
-    change_status: str   # 'INSERTED' | 'UPDATED' | 'UNCHANGED'
+    change_status: str   # 'INSERTED' | 'UPDATED' | 'UNCHANGED' | 'SKIPPED'
 
 
 @dataclass
@@ -113,132 +90,42 @@ class ProcessingResult:
     def needs_review_count(self) -> int:
         return len(self.needs_review_fields)
 
+    def add(self, row: LabReportField):
+        fr = FieldResult(
+            field_name=row.field_name, patient_field=row.patient_field,
+            extracted_value=row.extracted_value, previous_value=row.previous_value,
+            unit=row.unit, reference_range=row.reference_range, change_status=row.change_status,
+        )
+        self.detected_fields.append(fr)
+        if row.change_status == LabReportField.ChangeStatus.SKIPPED:
+            self.needs_review_fields.append(fr)
+        elif row.change_status in (LabReportField.ChangeStatus.UNCHANGED, LabReportField.ChangeStatus.HISTORY):
+            self.unchanged_fields.append(fr)
+        else:
+            self.updated_fields.append(fr)
+
+
+DASHBOARD_FIELDS = _UPDATABLE_PATIENT_FIELDS | _REVIEW_ONLY_PATIENT_FIELDS
+
+def build_preview(lab_report: LabReport, extracted_fields: list[ExtractedField]) -> ProcessingResult:
+    """Kept for existing callers; the logic lives in services/dashboard.py."""
+    from apps.lab_reports.services.dashboard import build_preview as _build_preview
+    return _build_preview(lab_report, extracted_fields)
+
+
+def apply_report(lab_report: LabReport, confirmed_by=None) -> ProcessingResult:
+    """Kept for existing callers; the logic lives in services/dashboard.py."""
+    from apps.lab_reports.services.dashboard import apply_report as _apply_report
+    return _apply_report(lab_report, user=confirmed_by).result
+
 
 def run_cdsa(lab_report: LabReport, extracted_fields: list[ExtractedField]) -> ProcessingResult:
-    patient = lab_report.patient
-
-    LabReportField.objects.filter(report=lab_report).delete()
-
-    result = ProcessingResult()
-    patient_dirty = False
-    changed_fields: list[str] = []
-
-    for ef in extracted_fields:
-        previous_value = ''
-        change_status = LabReportField.ChangeStatus.UNCHANGED
-        needs_review = False
-
-        if ef.patient_field in _UPDATABLE_PATIENT_FIELDS:
-            current_raw = getattr(patient, ef.patient_field, None)
-            previous_value = _to_display(current_raw)
-            new_norm = _normalise(ef.extracted_value, ef.patient_field)
-            current_norm = _normalise(previous_value, ef.patient_field)
-
-            if not previous_value:
-                try:
-                    _apply_to_patient(patient, ef.patient_field, ef.extracted_value)
-                    patient_dirty = True
-                    changed_fields.append(ef.patient_field)
-                    change_status = LabReportField.ChangeStatus.INSERTED
-                    if ef.confidence == 'low':
-                        needs_review = True
-                except ValueError as exc:
-                    logger.warning('Applying field %s for patient %s despite validation error: %s', ef.patient_field, patient.patient_id, exc)
-                    try:
-                        _force_apply_to_patient(patient, ef.patient_field, ef.extracted_value)
-                        patient_dirty = True
-                        changed_fields.append(ef.patient_field)
-                        change_status = LabReportField.ChangeStatus.INSERTED
-                        needs_review = True
-                    except Exception:
-                        logger.warning('Skipping field %s for patient %s: %s', ef.patient_field, patient.patient_id, exc)
-                        needs_review = True
-                        change_status = LabReportField.ChangeStatus.UNCHANGED
-            elif new_norm == current_norm:
-                change_status = LabReportField.ChangeStatus.UNCHANGED
-                if ef.confidence == 'low':
-                    needs_review = True
-            else:
-                try:
-                    _apply_to_patient(patient, ef.patient_field, ef.extracted_value)
-                    patient_dirty = True
-                    changed_fields.append(ef.patient_field)
-                    change_status = LabReportField.ChangeStatus.UPDATED
-                    if ef.confidence == 'low':
-                        needs_review = True
-                except ValueError as exc:
-                    logger.warning('Applying field %s for patient %s despite validation error: %s', ef.patient_field, patient.patient_id, exc)
-                    try:
-                        _force_apply_to_patient(patient, ef.patient_field, ef.extracted_value)
-                        patient_dirty = True
-                        changed_fields.append(ef.patient_field)
-                        change_status = LabReportField.ChangeStatus.UPDATED
-                        needs_review = True
-                    except Exception:
-                        logger.warning('Skipping field %s for patient %s: %s', ef.patient_field, patient.patient_id, exc)
-                        needs_review = True
-                        change_status = LabReportField.ChangeStatus.UNCHANGED
-        else:
-            change_status = LabReportField.ChangeStatus.INSERTED
-            previous_value = ''
-            if ef.confidence == 'low':
-                needs_review = True
-
-        LabReportField.objects.create(
-            report=lab_report,
-            field_name=ef.field_name,
-            patient_field=ef.patient_field,
-            extracted_value=ef.extracted_value,
-            previous_value=previous_value,
-            unit=ef.unit,
-            reference_range=ef.reference_range,
-            change_status=change_status,
-        )
-
-        fr = FieldResult(
-            field_name=ef.field_name,
-            patient_field=ef.patient_field,
-            extracted_value=ef.extracted_value,
-            previous_value=previous_value,
-            unit=ef.unit,
-            reference_range=ef.reference_range,
-            change_status=change_status,
-        )
-        result.detected_fields.append(fr)
-        if needs_review:
-            result.needs_review_fields.append(fr)
-        elif change_status in (
-            LabReportField.ChangeStatus.UPDATED,
-            LabReportField.ChangeStatus.INSERTED,
-        ):
-            result.updated_fields.append(fr)
-        else:
-            result.unchanged_fields.append(fr)
-
-    if patient_dirty and changed_fields:
-        unique_fields = list(dict.fromkeys(changed_fields))
-        try:
-            patient.save(update_fields=unique_fields)
-            logger.info(
-                'CDSA updated patient %s: %s',
-                patient.patient_id,
-                unique_fields,
-            )
-        except Exception as exc:
-            logger.error('CDSA failed to save patient %s: %s', patient.patient_id, exc)
-            raise
-
-    lab_report.detected_count = result.detected_count
-    lab_report.updated_count = result.updated_count
-    lab_report.unchanged_count = result.unchanged_count
-    lab_report.status = LabReport.Status.COMPLETED
-    lab_report.processed_at = timezone.now()
-    lab_report.save(update_fields=[
-        'detected_count', 'updated_count', 'unchanged_count',
-        'status', 'processed_at',
-    ])
-
-    return result
+    """Preview and confirm in one step (used by tests and maintenance code)."""
+    build_preview(lab_report, extracted_fields)
+    if lab_report.status != LabReport.Status.PENDING_CONFIRMATION:
+        lab_report.status = LabReport.Status.PENDING_CONFIRMATION
+        lab_report.save(update_fields=['status'])
+    return apply_report(lab_report)
 
 
 def _to_display(raw) -> str:
@@ -248,83 +135,59 @@ def _to_display(raw) -> str:
 
 
 def _normalise(value: str, patient_field: str) -> str:
-    v = value.strip()
+    v = (value or '').strip()
     if not v:
         return ''
-
     if patient_field == 'blood_group':
         return v.upper()
-
     if patient_field == 'blood_pressure':
-        import re
         return re.sub(r'\s*/\s*', '/', v)
-
-    if patient_field in _DECIMAL_PATIENT_FIELDS:
+    if patient_field in _DECIMAL_PATIENT_FIELDS or patient_field == 'heart_rate':
         try:
             return str(Decimal(v).normalize())
         except (InvalidOperation, ValueError):
             return v
-
     return v
 
 
-def _apply_to_patient(patient, patient_field: str, raw_value: str) -> None:
-    v = raw_value.strip()
+def _parse_for_field(patient, patient_field: str, raw_value: str):
+    """Return the value to store, or None when it is invalid for the field."""
+    v = (raw_value or '').strip()
+    if not validate_numeric_result(v, patient_field):
+        return None
 
-    if patient_field == 'heart_rate':
-        n = int(float(v))
-        if not (30 <= n <= 220):
-            raise ValueError(
-                f'Extracted heart rate "{v}" for field "{patient_field}" failed validation.'
-            )
-        setattr(patient, patient_field, n)
-    elif patient_field in _DECIMAL_PATIENT_FIELDS:
-        if not validate_numeric_result(v, patient_field):
-            raise ValueError(
-                f'Extracted value "{v}" for field "{patient_field}" failed validation.'
-            )
-        try:
-            setattr(patient, patient_field, Decimal(v))
-        except (InvalidOperation, ValueError) as exc:
-            raise ValueError(
-                f'Cannot convert "{v}" to a number for field "{patient_field}": {exc}'
-            ) from exc
-
-    elif patient_field == 'blood_group':
-        setattr(patient, patient_field, v.upper())
-
-    elif patient_field == 'blood_pressure':
+    if patient_field == 'blood_pressure':
         if not validate_blood_pressure(v):
-            raise ValueError(
-                f'Extracted blood pressure "{v}" failed validation.'
-            )
-        import re
-        setattr(patient, patient_field, re.sub(r'\s*/\s*', '/', v))
-
-    else:
-        setattr(patient, patient_field, v)
-
-
-def _force_apply_to_patient(patient, patient_field: str, raw_value: str) -> None:
-    v = raw_value.strip()
+            return None
+        normalised = re.sub(r'\s*/\s*', '/', v)
+        max_length = patient._meta.get_field('blood_pressure').max_length
+        return normalised if len(normalised) <= max_length else None
 
     if patient_field == 'heart_rate':
         try:
-            setattr(patient, patient_field, int(float(v)))
-        except (ValueError, TypeError):
-            setattr(patient, patient_field, 0)
-    elif patient_field in _DECIMAL_PATIENT_FIELDS:
-        try:
-            setattr(patient, patient_field, Decimal(v))
+            return int(Decimal(v))
         except (InvalidOperation, ValueError):
-            setattr(patient, patient_field, Decimal(0))
+            return None
 
-    elif patient_field == 'blood_group':
-        setattr(patient, patient_field, v.upper())
+    if patient_field in _DECIMAL_PATIENT_FIELDS:
+        try:
+            number = Decimal(v)
+        except (InvalidOperation, ValueError):
+            return None
+        return _fit_decimal(patient, patient_field, number)
 
-    elif patient_field == 'blood_pressure':
-        import re
-        setattr(patient, patient_field, re.sub(r'\s*/\s*', '/', v))
+    return None
 
-    else:
-        setattr(patient, patient_field, v)
+
+def _fit_decimal(patient, patient_field: str, number: Decimal) -> Decimal | None:
+    """Round to the column's decimal places; reject values that would overflow it."""
+    model_field = patient._meta.get_field(patient_field)
+    quantum = Decimal(1).scaleb(-model_field.decimal_places)
+    try:
+        rounded = number.quantize(quantum)
+    except InvalidOperation:
+        return None
+    integer_digits = len(rounded.as_tuple().digits) - model_field.decimal_places
+    if integer_digits > model_field.max_digits - model_field.decimal_places:
+        return None
+    return rounded

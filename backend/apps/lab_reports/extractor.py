@@ -44,10 +44,14 @@ FIELD_ALIASES: dict[str, list[str]] = {
         'blood sugar (random)', 'post prandial', 'pp blood sugar',
     ],
     'hemoglobin': [
-        'hemoglobin', 'haemoglobin', 'hb', 'hgb',
+        'haemoglobin', 'hemoglobin', 'hb', 'hgb',
+        # Common OCR misreads (i/l/1 and o/0 confused)
+        'haemoglobln', 'hemoglobln', 'haemoglob1n', 'hemoglob1n',
+        'haemog1obin', 'hemog1obin', 'haemogl0bin', 'hemogl0bin',
     ],
     'cholesterol_total': [
         'total cholesterol', 'cholesterol total', 'total chol', 'chol total',
+        't. chol', 't.chol', 't chol', 't. cholesterol', 's. cholesterol', 'serum cholesterol',
     ],
     'cholesterol_hdl': [
         'hdl cholesterol', 'hdl', 'high density lipoprotein',
@@ -64,14 +68,11 @@ FIELD_ALIASES: dict[str, list[str]] = {
     'weight': [
         'weight', 'wt', 'body weight',
     ],
-    'blood_group': [
-        'blood group', 'blood type', 'group', 'type',
-    ],
     'temperature': [
         'temperature', 'temp', 'body temperature',
     ],
     'hematocrit': [
-        'hematocrit', 'hct', 'hcv', 'packed cell volume',
+        'haematocrit', 'hematocrit', 'hct', 'hcv', 'packed cell volume',
     ],
     'wbc_count': [
         'wbc', 'white blood cell', 'white blood count', 'leukocyte',
@@ -87,6 +88,10 @@ FIELD_ALIASES: dict[str, list[str]] = {
     ],
     'hba1c': [
         'hba1c', 'hb a1c', 'a1c', 'glycated hemoglobin',
+        # OCR reads the "1" as I, l or |, and may split the word ("HbAIC", "HbAlC", "HbA1 C").
+        'hbaic', 'hbalc', 'hba|c', 'hb aic', 'hb alc', 'hba1 c', 'hb a1 c',
+        'glycated haemoglobin', 'glycosylated hemoglobin', 'glycosylated haemoglobin',
+        'haemoglobin a1c', 'hemoglobin a1c',
     ],
     'serum_creatinine': [
         'creatinine', 'serum creatinine',
@@ -124,6 +129,33 @@ FIELD_ALIASES: dict[str, list[str]] = {
 }
 
 
+# Names shown to users where the field key would read wrongly (British spelling,
+# as printed on Nepali lab reports).
+_DISPLAY_NAMES: dict[str, str] = {
+    'hemoglobin': 'Haemoglobin',
+    'hematocrit': 'Haematocrit',
+    'hba1c': 'HbA1C',
+    'spo2': 'SpO2',
+    'ssgpt_alt': 'SGPT / ALT',
+    'ssgot_ast': 'SGOT / AST',
+    'tsh': 'TSH',
+    't3': 'T3',
+    't4': 'T4',
+    'esr': 'ESR',
+    'wbc_count': 'WBC Count',
+    'rbc_count': 'RBC Count',
+    'cholesterol_hdl': 'HDL Cholesterol',
+    'cholesterol_ldl': 'LDL Cholesterol',
+    'cholesterol_total': 'Total Cholesterol',
+    'blood_sugar_fasting': 'Blood Sugar (Fasting)',
+    'blood_sugar_random': 'Blood Sugar (Random)',
+}
+
+
+def display_name(field: str) -> str:
+    return _DISPLAY_NAMES.get(field, field.replace('_', ' ').title())
+
+
 # ── Original field definitions ────────────────────────────────────────────────
 
 _FIELD_DEFS: list[tuple[str, str, list[str]]] = [
@@ -154,11 +186,12 @@ _FIELD_DEFS: list[tuple[str, str, list[str]]] = [
     ('Temperature', 'temperature', [
         r'(?:temperature|temp)\s*[:\-=]?\s*(?P<val>\d{2,3}(?:\.\d)?)\s*(?P<unit>°?[CF])',
     ]),
-    ('Hemoglobin', 'hemoglobin', [
-        r'h(?:ae?moglobin)\s*(?:\([^)]*\))?\s*[:\-=]?\s*(?P<val>\d{1,3}(?:\.\d{1,2})?)\s*(?P<unit>g\s*/\s*d[lL]|g%)?(?:\s*\((?P<ref>[^)]+)\))?',
+    ('Haemoglobin', 'hemoglobin', [
+        # Haemoglobin / Hemoglobin, tolerating OCR misreads such as "Haemoglobln" or "Hemog1obin".
+        r'h(?:a?e)mog[l1i][o0]b[il1]n\s*(?:\([^)]*\))?\s*[:\-=]?\s*(?P<val>\d{1,3}(?:\.\d{1,2})?)\s*(?P<unit>g\s*/\s*d[lL]|g%)?(?:\s*\((?P<ref>[^)]+)\))?',
         r'\bhb\b\s*[:\-=]?\s*(?P<val>\d{1,3}(?:\.\d{1,2})?)\s*(?P<unit>g\s*/\s*d[lL]|g%)?',
     ]),
-    ('Hematocrit', 'hematocrit', [
+    ('Haematocrit', 'hematocrit', [
         r'h(?:ae?matocrit|ct|cv)\s*[:\-=]?\s*(?P<val>\d{1,3}(?:\.\d{1,2})?)\s*(?P<unit>%)?(?:\s*\((?P<ref>[^)]+)\))?',
     ]),
     ('WBC Count', 'wbc_count', [
@@ -185,8 +218,9 @@ _FIELD_DEFS: list[tuple[str, str, list[str]]] = [
         r'(?:blood\s+sugar|glucose)\s+(?:random|pp|post\s*prandial)\s*[:\-=]?\s*(?P<val>\d{2,3}(?:\.\d{1,2})?)\s*(?P<unit>mg\s*/\s*d[lL]|mmol\s*/\s*[lL])?',
         r'blood\s+sugar\s*[:\-=]?\s*(?P<val>\d{2,3}(?:\.\d{1,2})?)\s*(?P<unit>mg\s*/\s*d[lL])?\s*\(?\s*random',
     ]),
-    ('HbA1c', 'hba1c', [
-        r'(?:hba1c|hb\s*a1c|glycated\s+hemoglobin|a1c)\s*[:\-=]?\s*(?P<val>\d{1,2}(?:\.\d{1,2})?)\s*(?P<unit>%)?',
+    ('HbA1C', 'hba1c', [
+        r'(?:h\s*b\s*a\s*[1il|]\s*c|glyc(?:at|osyl)ated\s+ha?emoglobin|ha?emoglobin\s+a[1il|]c|(?<![a-z])a1c)'
+        r'(?:\s*\([^)\n]*\))?\s*[:\-=]?\s*(?P<val>\d{1,2}(?:\.\d{1,2})?)\s*(?P<unit>%)?',
     ]),
     ('Total Cholesterol', 'cholesterol_total', [
         r'(?:total\s+cholesterol|cholesterol[\s,]+total)\s*[:\-=]?\s*(?P<val>\d{2,3}(?:\.\d{1,2})?)\s*(?P<unit>mg\s*/\s*d[lL]|mmol\s*/\s*[lL])?',
@@ -237,14 +271,16 @@ _FIELD_DEFS: list[tuple[str, str, list[str]]] = [
         r'(?:potassium|k\+?)\s*[:\-=]?\s*(?P<val>\d{1,2}(?:\.\d{1,2})?)\s*(?P<unit>m(?:mol|eq)\s*/\s*[lL])?',
     ]),
     ('Blood Group', 'blood_group', [
-        r'blood\s+(?:group|type)\s*[:\-=]?\s*(?P<val>[ABO]{1,2}[+-]?(?:\s+(?:positive|negative))?)',
-        r'(?:group|type)\s*[:\-=]?\s*(?P<val>[ABO]{1,2}[+-])',
-        r'\b(?P<val>(?:A|B|AB|O)\s*[+\-](?:ve)?)\b',
+        # Only an explicit "Blood group/type:" label is trusted; a bare "A+"
+        # elsewhere in a report (grades, footnotes) must never set the group.
+        r'blood\s+(?:group|type)\s*[:\-=]?\s*(?P<val>(?:AB|A|B|O)\s*(?:[+\-](?:ve)?|\s+(?:positive|negative)))',
     ]),
 ]
 
+# Every pattern starts at a word boundary, so "ast" never matches inside "past"
+# and "alt" never matches inside "salt".
 _COMPILED: list[tuple[str, str, list[re.Pattern]]] = [
-    (label, pat_field, [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in patterns])
+    (label, pat_field, [re.compile(rf'(?<![a-z0-9])(?:{p})', re.IGNORECASE | re.MULTILINE) for p in patterns])
     for label, pat_field, patterns in _FIELD_DEFS
 ]
 
@@ -278,8 +314,12 @@ def normalize_ocr_text(text: str) -> str:
     text = re.sub(r'[ \t]+', ' ', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.replace('|', ' ').replace('_', ' ')
-    text = re.sub(r'\bO\b(?=\s*\d)', '0', text, flags=re.IGNORECASE)
-    text = re.sub(r'\bl\b(?=\s*\d)', '1', text, flags=re.IGNORECASE)
+    # A lone O or l before a number is usually a misread 0 or 1. Letters that are
+    # part of a unit ("mmol/L 3.9-5.5", "g/L 120") are left alone.
+    text = re.sub(r'(?<![\w/])O(?![\w/])(?=\s*\d)', '0', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?<![\w/])l(?![\w/])(?=\s*\d)', '1', text, flags=re.IGNORECASE)
+    # A decimal comma ("13,13 g/dl") is a decimal point; "1,234" (thousands) is left alone.
+    text = re.sub(r'(?<![\d,.])(\d{1,3}),(\d{1,2})(?![\d,])', r'\1.\2', text)
     return text.strip()
 
 
@@ -287,6 +327,9 @@ def _normalise_blood_group(raw: str) -> str | None:
     s = re.sub(r'\s+', ' ', raw.strip()).lower()
     if s in _BG_MAP:
         return _BG_MAP[s]
+    compact = s.replace(' ', '')                      # "O +ve" → "o+ve"
+    if compact in _BG_MAP:
+        return _BG_MAP[compact]
     candidate = re.sub(r'\s+', '', raw.strip().upper())
     if candidate in _VALID_BG:
         return candidate
@@ -331,6 +374,41 @@ def validate_blood_pressure(value: str) -> bool:
     return 60 <= sys <= 220 and 40 <= dia <= 140
 
 
+# Physiologically plausible bounds. A value outside them is treated as an OCR
+# misread and is never written to the patient record.
+_PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
+    'height': (30, 250),
+    'weight': (1, 300),
+    'hemoglobin': (3, 25),
+    'blood_sugar_fasting': (20, 600),
+    'blood_sugar_random': (20, 800),
+    'cholesterol_total': (50, 500),
+    'cholesterol_hdl': (10, 1000),
+    'cholesterol_ldl': (10, 1000),
+    'triglycerides': (10, 1000),
+    'heart_rate': (30, 220),
+    'spo2': (50, 100),
+    'temperature': (30, 110),
+    'hba1c': (3, 20),
+    'serum_creatinine': (0.1, 20),
+    'blood_urea': (1, 300),
+    'uric_acid': (0.5, 20),
+    'ssgpt_alt': (1, 999),
+    'ssgot_ast': (1, 999),
+    'bilirubin_total': (0.1, 50),
+    'tsh': (0.001, 150),
+    't3': (0.1, 999),
+    't4': (0.1, 99),
+    'sodium': (100, 180),
+    'potassium': (1.5, 10),
+    'wbc_count': (0.1, 9999),
+    'rbc_count': (0.5, 15),
+    'platelet_count': (1, 9999),
+    'hematocrit': (5, 75),
+    'esr': (0, 200),
+}
+
+
 def validate_numeric_result(value: str, field: str) -> bool:
     if not _is_valid_number(value):
         return False
@@ -340,73 +418,128 @@ def validate_numeric_result(value: str, field: str) -> bool:
         n = float(value.strip())
     except ValueError:
         return False
-    if field == 'height':
-        return 30 <= n <= 250
-    if field == 'weight':
-        return 1 <= n <= 300
-    if field == 'hemoglobin':
-        return 2 <= n <= 25
-    if field in ('blood_sugar_fasting', 'blood_sugar_random'):
-        return 20 <= n <= 600
-    if field in ('cholesterol_total', 'cholesterol_hdl', 'cholesterol_ldl', 'triglycerides'):
-        return 10 <= n <= 1000
-    return True
+    bounds = _PLAUSIBLE_RANGES.get(field)
+    if bounds is None:
+        return True
+    low, high = bounds
+    return low <= n <= high
 
 
 # ── Nearby-line search ────────────────────────────────────────────────────────
 
-def _extract_value_from_line(line: str, field_name: str) -> Optional[str]:
-    """Try to extract a numeric value from the same line as the field alias."""
-    # Handle blood pressure specially - look for sys/dia pattern
-    if field_name == 'blood_pressure':
-        m = re.search(r'(\d{2,3}\s*/\s*\d{2,3})', line)
-        if m:
-            return m.group(1)
-    # Look for patterns like "Label: value" or "Label = value"
-    patterns = [
-        rf'{field_name.replace("_", " ")}\s*[:\-=]\s*(\d{{1,3}}(?:\.\d{{1,2}})?)',
-        rf'{field_name.replace("_", " ")}\s+(\d{{1,3}}(?:\.\d{{1,2}})?)',
-    ]
-    for pattern in patterns:
-        m = re.search(pattern, line, re.IGNORECASE)
-        if m:
-            return m.group(1)
-    return None
+# The value must follow its label: a few non-digit characters (":", "(Hb)",
+# table spacing) and then the number. Taking the first number anywhere on the
+# line would read "SGPT: 34  SGOT: 28" as SGOT = 34.
+_BP_AFTER_LABEL = re.compile(r'^[^\d\n]{0,30}?(\d{2,3}\s*/\s*\d{2,3})')
+# A number stuck to a letter ("a4l") is an OCR misread, not a result.
+_NUM_AFTER_LABEL = re.compile(r'^[^\d\n]{0,30}?(?<![A-Za-z])(\d{1,6}(?:\.\d{1,3})?)(?!\s*[-–—]\s*\d)')
 
 
-def _search_nearby_lines(lines: list[str], idx: int, max_lookahead: int = 6) -> Optional[str]:
-    for offset in range(0, max_lookahead + 1):
+# A unit printed right after the value (longest spellings first).
+_UNIT_AFTER_VALUE = re.compile(
+    r'^\s*(?P<unit>mmol\s*/\s*mol|mmol\s*/\s*l|[µμu]mol\s*/\s*l|mg\s*/\s*dl|mg\s*%|'
+    r'gm?s?\s*/\s*dl|gm?\s*/\s*l|gm?\s*%|m?eq\s*/\s*l|[µμu]?iu\s*/\s*ml|m?iu\s*/\s*l|'
+    r'u\s*/\s*l|ng\s*/\s*dl|[µμu]g\s*/\s*dl|mm\s*/?\s*hg|mm\s*/\s*h(?:r|our)?|bpm|/\s*min|'
+    r'%|kgs?|lbs?|cm|in(?:ches)?|m|°?\s*[cf])(?![a-z])',
+    re.IGNORECASE,
+)
+
+
+def _unit_after(text: str) -> str:
+    m = _UNIT_AFTER_VALUE.match(text or '')
+    return re.sub(r'\s+', '', m.group('unit')) if m else ''
+
+
+# Lines that mention haemoglobin but are not the haemoglobin result: HbA1c
+# ("Glycated Haemoglobin", "Haemoglobin A1c", OCR "HbAIC") and the red cell
+# indices ("Mean Cell Haemoglobin", MCH, MCHC).
+_NOT_HAEMOGLOBIN_LINE = re.compile(
+    r'h\s*b\s*a\s*[1il|]\s*c|a[1il|]c\b|glyc|mean\s+cell|corpuscular|\bmchc?\b', re.IGNORECASE)
+
+
+def _on_excluded_line(text: str, m: re.Match, field: str) -> bool:
+    """Whether a haemoglobin match sits on an HbA1c or red-cell-index line."""
+    if field != 'hemoglobin':
+        return False
+    start = text.rfind('\n', 0, m.start()) + 1
+    end = text.find('\n', m.end())
+    return bool(_NOT_HAEMOGLOBIN_LINE.search(text[start:end if end != -1 else len(text)]))
+
+
+def _first_match(pattern: re.Pattern, text: str, field: str) -> Optional[re.Match]:
+    return next((m for m in pattern.finditer(text) if not _on_excluded_line(text, m, field)), None)
+
+
+def _value_after_alias(field: str, line: str) -> tuple[bool, Optional[str], str]:
+    """Return (alias found, value that follows the alias on the same line, its unit)."""
+    if field == 'hemoglobin' and _NOT_HAEMOGLOBIN_LINE.search(line):
+        return False, None, ''
+    found = False
+    for rx in _ALIAS_RES.get(field, []):
+        for m in rx.finditer(line):
+            found = True
+            rest = line[m.end():]
+            pattern = _BP_AFTER_LABEL if field == 'blood_pressure' else _NUM_AFTER_LABEL
+            v = pattern.search(rest)
+            if v:
+                return True, re.sub(r'\s*/\s*', '/', v.group(1)), _unit_after(rest[v.end():])
+    return found, None, ''
+
+
+def _search_following_lines(lines: list[str], idx: int, field: str, max_lookahead: int = 2) -> tuple[Optional[str], str]:
+    """Look for a value (and its unit) printed on its own line just below the label."""
+    for offset in range(1, max_lookahead + 1):
         if idx + offset >= len(lines):
             break
         candidate = lines[idx + offset].strip()
-        if not candidate:
+        if not candidate or _is_reference_range_line(candidate):
             continue
-        if _is_reference_range_line(candidate):
-            continue
-        if _is_valid_number(candidate):
-            return candidate
-        m = re.search(r'(\d{2,3}\s*/\s*\d{2,3})', candidate)
+        # Only a line that starts with the value counts; a line that starts with
+        # another label belongs to a different test.
+        pattern = r'^(\d{2,3}\s*/\s*\d{2,3})' if field == 'blood_pressure' else r'^(\d{1,6}(?:\.\d{1,3})?)\b'
+        m = re.match(pattern, candidate)
         if m:
-            return m.group(1)
-        m = re.search(r'(\d{1,3}(?:\.\d{1,2})?)', candidate)
-        if m:
-            return m.group(1)
-    return None
+            unit = _unit_after(candidate[m.end():])
+            if not unit and offset + idx + 1 < len(lines):
+                unit = _unit_after(lines[idx + offset + 1])   # "118/76" then "mmHg" below
+            return re.sub(r'\s*/\s*', '/', m.group(1)), unit
+        return None, ''
+    return None, ''
 
 
-def _search_nearby_table(lines: list[str], idx: int, max_lookahead: int = 6) -> Optional[tuple[str, str]]:
-    for offset in range(0, max_lookahead + 1):
-        if idx + offset >= len(lines):
-            break
-        candidate = lines[idx + offset].strip()
-        if not candidate:
+# ── Flexible patterns for the main dashboard tests ────────────────────────────
+# Used when the stricter patterns above find nothing: the label, then up to 40
+# characters without digits on the same line (":", "(Hb)", a method name, table
+# spacing), then the number. Fasting / post-prandial sugar and HbA1c are excluded.
+
+_CORE_GAP = r'[^\d\n]{0,40}?'
+_CORE_NUMBER = r'(?<![A-Za-z])(?P<val>\d{1,4}(?:\.\d{1,3})?)(?!\s*[-–—]\s*\d)(?!\.?\d)'
+_CORE_LABELS: dict[str, str] = {
+    'hemoglobin': r'(?<!glycated )(?<!glycosylated )(?<!cell )\b(?:ha?emoglobin|hgb|hb)\b(?![ \t]*a[1il|]c)(?![ \t]*conc)',
+    'cholesterol_total': r'\b(?:total[ \t]+cholesterol|cholesterol[ \t]*,?[ \t]*total|t\.?[ \t]*chol(?:esterol)?)\b',
+    'blood_sugar_random': (
+        r'\b(?:random[ \t]+(?:blood[ \t]+)?(?:sugar|glucose)|rbs|glucose[ \t]*[-–(,]?[ \t]*random'
+        r'|blood[ \t]+sugar(?![^\d\n]{0,15}?(?:fasting|\bf\b|\bpp\b|post)))\b'
+    ),
+}
+_CORE_RES: dict[str, re.Pattern] = {
+    field: re.compile(label + _CORE_GAP + _CORE_NUMBER, re.IGNORECASE) for field, label in _CORE_LABELS.items()
+}
+
+
+def _core_fallback(normalized: str, field: str) -> ExtractedField | None:
+    for m in _CORE_RES[field].finditer(normalized):
+        if _on_excluded_line(normalized, m, field):
             continue
-        parts = re.split(r'\s{2,}', candidate)
-        if len(parts) >= 2:
-            val = parts[1].strip()
-            unit = parts[2].strip() if len(parts) > 2 else ''
-            if _is_valid_number(val):
-                return val, unit
+        value = m.group('val')
+        return ExtractedField(
+            field_name=display_name(field),
+            patient_field=field,
+            extracted_value=value,
+            unit=_unit_after(normalized[m.end():].split('\n', 1)[0]),
+            confidence='high' if validate_numeric_result(value, field) else 'low',
+            raw_match=m.group(0),
+        )
     return None
 
 
@@ -420,12 +553,10 @@ def _try_sys_dia(ocr_text: str) -> str | None:
     return None
 
 
-def _apply_alias_match(label: str, line: str) -> bool:
-    aliases = FIELD_ALIASES.get(label.lower(), [])
-    if not aliases:
-        return False
-    line_lower = line.lower()
-    return any(alias in line_lower for alias in aliases)
+_ALIAS_RES: dict[str, list[re.Pattern]] = {
+    field: [re.compile(rf'(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])', re.IGNORECASE) for alias in aliases]
+    for field, aliases in FIELD_ALIASES.items()
+}
 
 
 def extract_medical_fields(ocr_text: str) -> list[ExtractedField]:
@@ -445,33 +576,33 @@ def extract_medical_fields(ocr_text: str) -> list[ExtractedField]:
             seen_patient_fields.add(pf)
         results.append(field)
 
-    # 1. Try alias-based nearby-line extraction first
-    for internal_field, aliases in FIELD_ALIASES.items():
+    # 1. Try alias-based extraction first: the value after the label, or on the line below it
+    for internal_field in FIELD_ALIASES:
         if internal_field in seen_patient_fields:
             continue
         for i, line in enumerate(lines):
-            line_lower = line.lower()
-            if any(alias in line_lower for alias in aliases):
-                # First try to find value on the same line after the alias
-                val_on_same_line = _extract_value_from_line(line, internal_field)
+            alias_found, val_on_same_line, unit = _value_after_alias(internal_field, line)
+            if alias_found:
                 if val_on_same_line:
-                    confidence = 'high' if validate_numeric_result(val_on_same_line, internal_field) else 'medium'
+                    confidence = 'high' if validate_numeric_result(val_on_same_line, internal_field) else 'low'
                     _add(ExtractedField(
-                        field_name=internal_field.replace('_', ' ').title(),
+                        field_name=display_name(internal_field),
                         patient_field=internal_field,
                         extracted_value=val_on_same_line,
+                        unit=unit,
                         confidence=confidence,
                         raw_match=line,
                     ))
                     break
-                # Then try nearby lines
-                nearby = _search_nearby_lines(lines, i, max_lookahead=6)
+                # Then try the lines directly below the label
+                nearby, unit = _search_following_lines(lines, i, internal_field)
                 if nearby:
-                    confidence = 'high' if validate_numeric_result(nearby, internal_field) else 'medium'
+                    confidence = 'high' if validate_numeric_result(nearby, internal_field) else 'low'
                     _add(ExtractedField(
-                        field_name=internal_field.replace('_', ' ').title(),
+                        field_name=display_name(internal_field),
                         patient_field=internal_field,
                         extracted_value=nearby,
+                        unit=unit,
                         confidence=confidence,
                         raw_match=line,
                     ))
@@ -485,7 +616,7 @@ def extract_medical_fields(ocr_text: str) -> list[ExtractedField]:
 
         matched = False
         for pattern in patterns:
-            m = pattern.search(normalized)
+            m = _first_match(pattern, normalized, patient_field)
             if not m:
                 continue
 
@@ -496,7 +627,7 @@ def extract_medical_fields(ocr_text: str) -> list[ExtractedField]:
                     raw_val = f"{sys_v}/{dia_v}"
                     unit = ''
                     reference_range = ''
-                    confidence = 'high' if validate_blood_pressure(raw_val) else 'medium'
+                    confidence = 'high' if validate_blood_pressure(raw_val) else 'low'
                     matched = True
                     _add(ExtractedField(
                         field_name=label,
@@ -537,7 +668,7 @@ def extract_medical_fields(ocr_text: str) -> list[ExtractedField]:
                 pass
 
             confidence = 'high'
-            if patient_field and not validate_numeric_result(raw_val, patient_field):
+            if patient_field and patient_field != 'blood_group' and not validate_numeric_result(raw_val, patient_field):
                 confidence = 'low'
 
             matched = True
@@ -552,11 +683,18 @@ def extract_medical_fields(ocr_text: str) -> list[ExtractedField]:
             ))
             break
 
-    # 3. Blood pressure sys/dia fallback
+    # 3. Flexible label patterns for the main tests the passes above missed
+    for core_field in _CORE_RES:
+        if core_field not in seen_patient_fields:
+            found = _core_fallback(normalized, core_field)
+            if found:
+                _add(found)
+
+    # 4. Blood pressure sys/dia fallback
     if 'blood_pressure' not in seen_patient_fields:
         bp_val = _try_sys_dia(normalized)
         if bp_val:
-            confidence = 'high' if validate_blood_pressure(bp_val) else 'medium'
+            confidence = 'high' if validate_blood_pressure(bp_val) else 'low'
             _add(ExtractedField(
                 field_name='Blood Pressure',
                 patient_field='blood_pressure',

@@ -33,6 +33,15 @@ class Appointment(models.Model):
             models.Index(fields=['doctor', 'appointment_date', 'status']),
             models.Index(fields=['status', 'appointment_date']),
         ]
+        constraints = [
+            # One live booking per doctor slot, enforced by the database so two
+            # simultaneous requests cannot both succeed.
+            models.UniqueConstraint(
+                fields=['doctor', 'appointment_date', 'appointment_time'],
+                condition=models.Q(status__in=['PENDING', 'ACCEPTED']),
+                name='unique_active_doctor_slot',
+            ),
+        ]
         ordering = ['-appointment_date', '-appointment_time']
 
     def __str__(self):

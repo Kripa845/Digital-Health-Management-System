@@ -1,9 +1,7 @@
-import io
-import secrets
-import string
+import uuid as uuid_lib
 
-from django.http import HttpResponse
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status
@@ -13,30 +11,19 @@ from rest_framework.response import Response
 
 from apps.audit.utils import log_activity
 from apps.patients.models import Patient
-from apps.patients.serializers import PatientSerializer, PublicPatientSerializer
+from apps.patients.serializers import PatientSelfUpdateSerializer, PatientSerializer, PublicPatientSerializer
 from apps.notifications.models import Notification
 from apps.documents.models import Document
 from apps.documents.serializers import DocumentSerializer
-from apps.users.permissions import IsAdmin
-from apps.users.email_service import send_welcome_email
+from apps.doctors.access import doctor_access_filters, doctor_can_access
+from apps.users.credentials import generate_password
+from apps.users.permissions import IsAdmin, IsPatient
+from apps.users.email_service import account_created_response
 import logging
 
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
-
-
-
-def _generate_password(length: int = 10) -> str:
-    alphabet = string.ascii_letters + string.digits
-    while True:
-        pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
-        if (
-            any(c.isupper() for c in pwd)
-            and any(c.islower() for c in pwd)
-            and any(c.isdigit() for c in pwd)
-        ):
-            return pwd
 
 
 class PatientViewSet(viewsets.ModelViewSet):
@@ -48,16 +35,17 @@ class PatientViewSet(viewsets.ModelViewSet):
         'phone', 'allergies', 'current_medication',
     ]
     ordering_fields = ['patient_id', 'registration_date', 'last_updated']
-    ordering = ['patient_id']
+    ordering = ['-registration_date', 'patient_id']
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'update', 'partial_update', 'reset_password']:
+        if self.action in ['create', 'destroy', 'update', 'partial_update']:
             return [IsAdmin()]
-        elif self.action in ['list', 'retrieve', 'qr_code', 'toggle_status', 'stats']:
+        if self.action in ['list', 'retrieve']:
             return [permissions.IsAuthenticated()]
-        elif self.action == 'public_profile':
-            return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
+        # Extra actions (me, scan, public_profile, toggle_status, reset_password,
+        # regenerate_qr, stats, qr) declare their own permission_classes in
+        # @action; returning a fixed list here would silently override them.
+        return super().get_permissions()
 
     def get_queryset(self):
         user = self.request.user
@@ -67,10 +55,7 @@ class PatientViewSet(viewsets.ModelViewSet):
         if user.role == 'ADMIN':
             return qs.all()
         elif user.role == 'DOCTOR':
-            return qs.filter(
-                assignments__doctor__user=user,
-                assignments__status='Active',
-            ).distinct()
+            return qs.filter(*doctor_access_filters(user, 'pk'))
         elif user.role == 'PATIENT':
             return qs.filter(user=user)
         return Patient.objects.none()
@@ -89,34 +74,22 @@ class PatientViewSet(viewsets.ModelViewSet):
             request,
         )
 
-        email = patient.email or patient.user.email or ''
         full_name = " ".join(filter(None, [patient.first_name, patient.middle_name, patient.last_name]))
-        email_sent = False
-
-        if email:
-            try:
-                send_welcome_email(
-                    email_address=email,
-                    full_name=full_name,
-                    username=patient._generated_username,
-                    password=patient._generated_password
-                )
-                email_sent = True
-            except Exception as e:
-                logger.exception("Failed to send welcome email to patient %s", email)
-
-        if email_sent:
-            message = "Patient registered successfully. Login credentials have been sent to the registered email."
-        else:
-            message = "Account created successfully, but the email could not be sent."
-
-        return Response({
-            "success": True,
-            "message": message
-        }, status=status.HTTP_201_CREATED)
+        data = account_created_response(
+            label='Patient',
+            email=patient.email or patient.user.email or '',
+            full_name=full_name,
+            username=patient._generated_username,
+            password=patient._generated_password,
+            password_was_generated=patient._generated_password != '[PROVIDED]',
+        )
+        # The admin page opens the new patient's QR card straight away.
+        data['patient'] = self.get_serializer(patient).data
+        return Response(data, status=status.HTTP_201_CREATED)
 
 
     def perform_update(self, serializer):
+        old_patient_id = serializer.instance.patient_id
         patient = serializer.save()
         log_activity(
             self.request.user,
@@ -124,6 +97,14 @@ class PatientViewSet(viewsets.ModelViewSet):
             f"Updated patient profile: {patient.patient_id}.",
             self.request,
         )
+        if patient.patient_id != old_patient_id:
+            # Printed cards and lab reports showing the old ID no longer match.
+            log_activity(
+                self.request.user,
+                'CHANGE_PATIENT_ID',
+                f"Changed patient ID from {old_patient_id} to {patient.patient_id}.",
+                self.request,
+            )
 
     def perform_destroy(self, instance):
         user = instance.user
@@ -136,6 +117,39 @@ class PatientViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             user.delete()
 
+    # The logged-in patient's own record: view it, or change contact details and photo.
+    @action(detail=False, methods=['get', 'patch'], url_path='me', permission_classes=[IsPatient])
+    def me(self, request):
+        patient = getattr(request.user, 'patient_profile', None)
+        if patient is None:
+            return Response({'detail': 'No patient profile is linked to your account.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if request.method == 'PATCH':
+            serializer = PatientSelfUpdateSerializer(patient, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            changed = sorted(
+                name for name, value in serializer.validated_data.items()
+                if name == 'photo' or (getattr(patient, name) or '') != (value or '')
+            )
+            old_name = ' '.join(filter(None, [patient.first_name, patient.middle_name, patient.last_name]))
+            patient = serializer.save()
+            if changed:
+                # Field names only, never the new values.
+                log_activity(request.user, 'UPDATE_OWN_PROFILE',
+                             f"Patient {patient.patient_id} updated their {', '.join(changed)}.", request)
+            if set(changed) & {'first_name', 'middle_name', 'last_name'}:
+                # The name is used to check uploaded lab reports, so admins are told
+                # about every self-made name change and can correct it if needed.
+                new_name = ' '.join(filter(None, [patient.first_name, patient.middle_name, patient.last_name]))
+                for admin in User.objects.filter(role='ADMIN', is_active=True):
+                    Notification.objects.create(
+                        receiver=admin, role='ADMIN', title='Patient Changed Their Name',
+                        message=f'Patient {patient.patient_id} changed their name from "{old_name}" to "{new_name}".',
+                    )
+
+        return Response(PatientSerializer(patient, context={'request': request}).data)
+
     # Public QR scan endpoint
     @action(
         detail=False,
@@ -146,7 +160,7 @@ class PatientViewSet(viewsets.ModelViewSet):
     def public_profile(self, request, uuid=None):
         try:
             patient = Patient.objects.get(uuid_token=uuid)
-        except (Patient.DoesNotExist, ValueError):
+        except (Patient.DoesNotExist, ValueError, DjangoValidationError):
             return Response(
                 {'error': 'Invalid QR code or profile not found.'},
                 status=status.HTTP_404_NOT_FOUND,
@@ -154,43 +168,6 @@ class PatientViewSet(viewsets.ModelViewSet):
 
         serializer = PublicPatientSerializer(patient, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-    # QR code PNG image
-    @action(detail=True, methods=['get'], url_path='qr')
-    def qr_code(self, request, pk=None):
-        try:
-            import qrcode
-        except ImportError:
-            return Response(
-                {'error': 'qrcode library not installed. Run: pip install qrcode[pil]'},
-                status=status.HTTP_501_NOT_IMPLEMENTED,
-            )
-
-        patient = self.get_object()
-        from django.conf import settings
-        frontend_base = settings.FRONTEND_URL or request.build_absolute_uri('/').rstrip('/')
-        qr_url = f'{frontend_base}/public-profile/{patient.uuid_token}'
-
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_H,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(qr_url)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color='black', back_color='white')
-
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        buffer.seek(0)
-
-        log_activity(
-            request.user, 'GENERATE_QR',
-            f"Generated QR code for patient {patient.patient_id}.",
-            request,
-        )
-        return HttpResponse(buffer, content_type='image/png')
 
     # Doctor QR scan
     @action(
@@ -219,29 +196,27 @@ class PatientViewSet(viewsets.ModelViewSet):
             log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
             return Response({'access': 'FULL', 'patient': data})
 
-        # Doctor workflow
-        assigned = DoctorAssignment.objects.filter(doctor=doctor, patient=patient, status='Active').exists()
-
-        request_obj = None
-        if assigned:
-            request_obj = AccessRequest.objects.filter(doctor=doctor, patient=patient).order_by('-created_at').first()
-            if not request_obj:
-                request_obj = AccessRequest.objects.create(
-                    doctor=doctor, patient=patient, reason='QR scan initiated'
-                )
-                for admin in User.objects.filter(role='ADMIN', is_active=True):
-                    Notification.objects.create(
-                        receiver=admin, role='ADMIN',
-                        title='Patient Access Request',
-                        message=f"Dr. {doctor.user.get_full_name() or doctor.user.username} requested access to patient {patient.patient_id} via QR scan.",
-                    )
-                log_activity(user, 'ACCESS_REQUEST', f"Requested access to patient {patient.patient_id} via QR scan.", request)
-
-        log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
-
-        if assigned and request_obj and request_obj.status == 'APPROVED':
+        # Doctor workflow: full record only with an active assignment AND an approved request.
+        if doctor_can_access(user, patient):
+            log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
             data = PatientSerializer(patient, context={'request': request}).data
             return Response({'access': 'FULL', 'patient': data})
+
+        assigned = DoctorAssignment.objects.filter(doctor=doctor, patient=patient, status='Active').exists()
+        request_obj = AccessRequest.objects.filter(doctor=doctor, patient=patient).order_by('-created_at').first()
+        if assigned and not request_obj:
+            request_obj = AccessRequest.objects.create(
+                doctor=doctor, patient=patient, reason='QR scan initiated'
+            )
+            for admin in User.objects.filter(role='ADMIN', is_active=True):
+                Notification.objects.create(
+                    receiver=admin, role='ADMIN',
+                    title='Patient Access Request',
+                    message=f"Dr. {doctor.user.get_full_name() or doctor.user.username} requested access to patient {patient.patient_id} via QR scan.",
+                )
+            log_activity(user, 'ACCESS_REQUEST', f"Requested access to patient {patient.patient_id} via QR scan.", request)
+
+        log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
 
         general = {
             'id': patient.id,
@@ -273,6 +248,19 @@ class PatientViewSet(viewsets.ModelViewSet):
             response_data['message'] = 'You are not assigned to this patient. Full medical access requires authorization.'
 
         return Response(response_data)
+
+    # Issue a new QR token (lost or compromised card); the old QR stops working.
+    @action(detail=True, methods=['post'], url_path='regenerate_qr', permission_classes=[IsAdmin])
+    def regenerate_qr(self, request, pk=None):
+        patient = self.get_object()
+        patient.uuid_token = uuid_lib.uuid4()
+        patient.save(update_fields=['uuid_token'])
+        log_activity(
+            request.user, 'REGENERATE_QR',
+            f"Issued a new QR code for patient {patient.patient_id}; the previous card no longer works.",
+            request,
+        )
+        return Response({'patient_id': patient.patient_id, 'uuid_token': str(patient.uuid_token)})
 
     # Toggle Active / Inactive
     @action(
@@ -317,7 +305,7 @@ class PatientViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
-            new_password = _generate_password(10)
+            new_password = generate_password(10)
 
         user.set_password(new_password)
         user.is_active = True

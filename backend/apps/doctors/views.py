@@ -1,23 +1,25 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from django.db import transaction
-import string
-import secrets
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from apps.doctors.models import Doctor, DoctorAssignment, Prescription, AccessRequest
+from apps.doctors.access import doctor_access_filters, doctor_can_access
 from apps.doctors.serializers import (
     DoctorSerializer, DoctorAssignmentSerializer, PrescriptionSerializer, AccessRequestSerializer,
+    PublicDoctorSerializer,
 )
 from apps.patients.models import Patient
 from apps.notifications.models import Notification
 from apps.users.permissions import IsAdmin, IsDoctor, IsPatient, IsAdminOrSelfDoctor, IsDoctorOrAdmin
-from apps.users.email_service import send_welcome_email
+from apps.users.credentials import generate_password
+from apps.users.email_service import account_created_response
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,20 +39,40 @@ class DoctorViewSet(viewsets.ModelViewSet):
         'doctor_id', 'uuid_token', 'license_number', 'specialization', 'phone',
     ]
     ordering_fields = ['doctor_id', 'registration_date', 'uuid_token']
-    ordering = ['doctor_id']
+    ordering = ['-registration_date', 'doctor_id']
 
     def get_permissions(self):
         if self.action in ['create', 'destroy']:
             return [IsAdmin()]
         elif self.action in ['update', 'partial_update']:
             return [IsAdminOrSelfDoctor()]
-        return [permissions.IsAuthenticated()]
+        elif self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated()]
+        # Extra actions (e.g. reset_password, admin only) declare their own
+        # permission_classes in @action; don't override them here.
+        return super().get_permissions()
+
+    # Verified registration data: only an administrator may change these.
+    ADMIN_ONLY_FIELDS = ('license_number', 'department', 'status')
 
     def get_queryset(self):
         user = self.request.user
         if not user or not user.is_authenticated:
             return Doctor.objects.none()
         return Doctor.objects.select_related('user').all()
+
+    def get_serializer_class(self):
+        # Patients and other doctors see a public profile without contact
+        # details, date of birth, licence number or login details.
+        if self.action in ('list', 'retrieve') and getattr(self.request.user, 'role', None) != 'ADMIN':
+            return PublicDoctorSerializer
+        return DoctorSerializer
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.user_id == request.user.id:
+            return Response(DoctorSerializer(instance, context=self.get_serializer_context()).data)
+        return Response(self.get_serializer(instance).data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -64,44 +86,25 @@ class DoctorViewSet(viewsets.ModelViewSet):
             request,
         )
 
-        email = doctor.email or doctor.user.email or ''
-        full_name = f"Dr. {doctor.user.first_name} {doctor.user.last_name}".strip()
-        email_sent = False
-
-        if email:
-            try:
-                send_welcome_email(
-                    email_address=email,
-                    full_name=full_name,
-                    username=doctor._generated_username,
-                    password=doctor._generated_password
-                )
-                email_sent = True
-            except Exception as e:
-                logger.exception("Failed to send welcome email to doctor %s", email)
-
-        if email_sent:
-            message = "Doctor registered successfully. Login credentials have been sent to the registered email."
-        else:
-            message = "Account created successfully, but the email could not be sent."
-
-        return Response({
-            "success": True,
-            "message": message
-        }, status=status.HTTP_201_CREATED)
-
-    def perform_create(self, serializer):
-        doctor = serializer.save()
-        log_activity(
-            self.request.user,
-            'CREATE_DOCTOR',
-            f"Created Doctor profile: {doctor.doctor_id} for user {doctor.user.username}.",
-            self.request,
+        return Response(
+            account_created_response(
+                label='Doctor',
+                email=doctor.email or doctor.user.email or '',
+                full_name=f"Dr. {doctor.user.first_name} {doctor.user.last_name}".strip(),
+                username=doctor._generated_username,
+                password=doctor._generated_password,
+                password_was_generated=doctor._generated_password != '[PROVIDED]',
+            ),
+            status=status.HTTP_201_CREATED,
         )
 
     def perform_update(self, serializer):
         if self.request.user.role != 'ADMIN':
-            serializer.validated_data.pop('status', None)
+            blocked = [f for f in self.ADMIN_ONLY_FIELDS if f in self.request.data]
+            if blocked:
+                raise PermissionDenied(
+                    f"Only an administrator can change: {', '.join(blocked)}."
+                )
         doctor = serializer.save()
         log_activity(
             self.request.user,
@@ -134,11 +137,7 @@ class DoctorViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
-            alphabet = string.ascii_letters + string.digits
-            while True:
-                new_password = ''.join(secrets.choice(alphabet) for _ in range(10))
-                if any(c.isupper() for c in new_password) and any(c.islower() for c in new_password) and any(c.isdigit() for c in new_password):
-                    break
+            new_password = generate_password(10)
 
         user.set_password(new_password)
         user.is_active = True
@@ -185,7 +184,18 @@ class DoctorAssignmentViewSet(viewsets.ModelViewSet):
         return DoctorAssignment.objects.none()
 
     def perform_create(self, serializer):
-        assignment = serializer.save()
+        with transaction.atomic():
+            assignment = serializer.save()
+            # An admin assigning a doctor is an approval of access, so record it
+            # the same way an approved access request is recorded.
+            if not AccessRequest.objects.filter(
+                doctor=assignment.doctor, patient=assignment.patient, status='APPROVED'
+            ).exists():
+                AccessRequest.objects.create(
+                    doctor=assignment.doctor, patient=assignment.patient,
+                    status='APPROVED', reason='Assigned by administrator',
+                    resolved_at=timezone.now(), resolved_by=self.request.user,
+                )
         log_activity(
             self.request.user,
             'CREATE_ASSIGNMENT',
@@ -225,7 +235,9 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
     ordering = ['-prescription_date']
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action == 'create':
+            return [IsDoctor()]
+        if self.action in ['update', 'partial_update', 'destroy']:
             return [IsDoctorOrAdmin()]
         return [permissions.IsAuthenticated()]
 
@@ -238,30 +250,19 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         if user.role == 'ADMIN':
             return qs.all()
         elif user.role == 'DOCTOR':
-            return qs.filter(
-                doctor=user,
-                patient__access_requests__doctor__user=user,
-                patient__access_requests__status='APPROVED',
-            ).distinct()
+            return qs.filter(doctor=user).filter(*doctor_access_filters(user, 'patient'))
         elif user.role == 'PATIENT':
             return qs.filter(patient__user=user)
         return Prescription.objects.none()
 
     def perform_create(self, serializer):
-        from rest_framework.exceptions import PermissionDenied
-        from apps.doctors.models import DoctorAssignment
-
         user = self.request.user
         patient = serializer.validated_data.get('patient')
 
-        if user.role == 'DOCTOR' and patient is not None:
-            assigned = DoctorAssignment.objects.filter(
-                doctor__user=user, patient=patient, status='Active'
-            ).exists()
-            if not assigned:
-                raise PermissionDenied(
-                    'You can only create prescriptions for patients assigned to you.'
-                )
+        if patient is None or not doctor_can_access(user, patient):
+            raise PermissionDenied(
+                'You can only write prescriptions for patients whose records you have approved access to.'
+            )
 
         prescription = serializer.save(doctor=user)
         log_activity(
@@ -272,6 +273,9 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        new_patient = serializer.validated_data.get('patient')
+        if new_patient is not None and new_patient != serializer.instance.patient:
+            raise PermissionDenied('A prescription cannot be moved to another patient.')
         prescription = serializer.save()
         log_activity(
             self.request.user,
@@ -362,6 +366,12 @@ class AccessRequestViewSet(viewsets.ModelViewSet):
             receiver=access.doctor.user, role='DOCTOR',
             title='Access Request Approved',
             message=f"Your access request for patient {access.patient.patient_id} was approved.",
+        )
+        Notification.objects.create(
+            receiver=access.patient.user, role='PATIENT',
+            title='Doctor Given Access',
+            message=f"Dr. {access.doctor.user.get_full_name() or access.doctor.user.username} "
+                    f"({access.doctor.department}) can now view your medical record.",
         )
         log_activity(request.user, 'APPROVE_ACCESS',
                      f"Approved access for Dr. {access.doctor.doctor_id} to patient {access.patient.patient_id}.", request)

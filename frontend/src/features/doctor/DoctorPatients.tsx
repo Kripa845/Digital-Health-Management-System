@@ -16,7 +16,7 @@ import {
 } from '@/components/patterns'
 import { ActiveStatusBadge } from '@/components/status-badge'
 import { documentService, patientService, prescriptionService } from '@/lib/api'
-import { formatBytes, formatDate, formatDateTime } from '@/lib/utils'
+import { formatBytes, formatDate, formatDateTime, saveBlob } from '@/lib/utils'
 import type { MedDocument, Patient, Prescription } from '@/lib/types'
 
 export function DoctorPatients() {
@@ -198,8 +198,17 @@ function PatientDetail({ patient }: { patient: Patient }) {
                     {d.size ? ` · ${formatBytes(d.size)}` : ''}
                   </p>
                 </div>
-                <Button asChild size="icon-sm" variant="ghost" aria-label="Open document">
-                  <a href={d.file} target="_blank" rel="noopener noreferrer"><Download className="size-4" /></a>
+                <Button
+                  size="icon-sm" variant="ghost" aria-label={`Download ${d.name}`}
+                  onClick={async () => {
+                    try {
+                      saveBlob(await documentService.download(d.id), d.name || `document-${d.id}`)
+                    } catch {
+                      toast.error('Could not download the document.')
+                    }
+                  }}
+                >
+                  <Download className="size-4" />
                 </Button>
               </li>
             ))}

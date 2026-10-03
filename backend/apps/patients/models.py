@@ -1,17 +1,23 @@
 import uuid
+from django.core.validators import RegexValidator
 from django.db import models
 from django.conf import settings
 
-
-def _generate_patient_id() -> str:
-    return f"PAT-{uuid.uuid4().hex[:8].upper()}"
+# Typed by the admin when the patient is registered, e.g. PAT-9C0E059C.
+PATIENT_ID_PATTERN = r'^PAT-[A-Z0-9]{4,12}$'
+validate_patient_id_format = RegexValidator(
+    PATIENT_ID_PATTERN,
+    "Patient ID must be PAT- followed by 4 to 12 capital letters or digits, e.g. PAT-9C0E059C.",
+)
 
 
 class Patient(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='patient_profile'
     )
-    patient_id = models.CharField(max_length=15, unique=True, editable=False, db_index=True)
+    patient_id = models.CharField(
+        max_length=16, unique=True, db_index=True, validators=[validate_patient_id_format],
+    )
     uuid_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     first_name = models.CharField(max_length=50)
@@ -97,18 +103,9 @@ class Patient(models.Model):
             - ((today.month, today.day) < (self.dob.month, self.dob.day))
         )
 
-    @classmethod
-    def generate_patient_id(cls) -> str:
-        for _ in range(10):
-            candidate = _generate_patient_id()
-            if not cls.objects.filter(patient_id=candidate).exists():
-                return candidate
-        # Fallback
-        return f"PAT-{uuid.uuid4().hex[:8].upper()}"
-
     def save(self, *args, **kwargs):
         if not self.patient_id:
-            self.patient_id = self.__class__.generate_patient_id()
+            raise ValueError("patient_id is required; the admin types it when registering the patient.")
         super().save(*args, **kwargs)
 
     def __str__(self):

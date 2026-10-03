@@ -14,7 +14,9 @@ import { AppointmentStatusBadge } from '@/components/status-badge'
 import { appointmentService } from '@/lib/api'
 import type { Appointment } from '@/lib/types'
 import { formatDate, formatTime } from '@/lib/utils'
-import { apiError, tableHeadClass } from './admin-common'
+import {
+  apiError, tableHeadClass,
+} from './admin-utils'
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'all', label: 'All statuses' },

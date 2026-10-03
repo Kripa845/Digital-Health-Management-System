@@ -7,3 +7,5 @@ db.sqlite3.bak
 media/
 staticfiles/
 .pytest_cache/
+e2e.sqlite3
+e2e-media/

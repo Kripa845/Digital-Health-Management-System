@@ -1,6 +1,9 @@
 from rest_framework import status, permissions, generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import AnonRateThrottle
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model, authenticate
 from datetime import date, timedelta
 
@@ -40,15 +43,27 @@ def build_login_response(user):
     return data
 
 
+class LoginRateThrottle(AnonRateThrottle):
+    """Per-IP limit on login attempts (rate set by the 'login' scope)."""
+    scope = 'login'
+
+
 class LoginView(APIView):
     permission_classes = []
     authentication_classes = []
+    throttle_classes = [LoginRateThrottle]
 
     def post(self, request):
         username = (request.data.get('username') or '').strip()
         password = request.data.get('password') or ''
         if not username or not password:
             return Response({'detail': 'Please enter both username and password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Usernames are generated in lower case, but phones often capitalise the
+        # first letter ("Hari.tamang"), so match the username case-insensitively.
+        match = User.objects.filter(username__iexact=username).values_list('username', flat=True)
+        if len(match) == 1:
+            username = match[0]
 
         user = authenticate(request, username=username, password=password)
         if user is None:
@@ -59,6 +74,23 @@ class LoginView(APIView):
 
         log_activity(user, 'LOGIN', f"User {user.username} logged in.", request)
         return Response(build_login_response(user), status=status.HTTP_200_OK)
+
+
+class LogoutView(APIView):
+    """Revoke the refresh token so it cannot mint new access tokens."""
+    permission_classes = []
+    authentication_classes = []
+
+    def post(self, request):
+        refresh = request.data.get('refresh')
+        if not refresh:
+            return Response({'detail': 'Refresh token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            RefreshToken(refresh).blacklist()
+        except TokenError:
+            # Already expired or revoked: the session is over either way.
+            pass
+        return Response(status=status.HTTP_205_RESET_CONTENT)
 
 
 class UserProfileView(APIView):

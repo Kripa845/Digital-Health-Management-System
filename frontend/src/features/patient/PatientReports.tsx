@@ -18,9 +18,9 @@ import {
 import { Skeleton } from '@/components/ui/misc'
 import { useAuth } from '@/lib/auth'
 import { documentService, prescriptionService, labReportService } from '@/lib/api'
-import { formatBytes, formatDate } from '@/lib/utils'
+import { formatBytes, formatDate, saveBlob } from '@/lib/utils'
 import type { MedDocument } from '@/lib/types'
-import { LabReportUploadDialog } from '@/features/lab-reports/LabReportUploadDialog'
+import { Link } from 'react-router-dom'
 import { LabReportRow } from '@/features/lab-reports/LabReportRow'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -110,15 +110,7 @@ function ReportRow({ doc, patientId }: { doc: MedDocument; patientId: number }) 
   async function download() {
     setDownloading(true)
     try {
-      const blob = await documentService.download(doc.id)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = doc.name || `report-${doc.id}`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
+      saveBlob(await documentService.download(doc.id), doc.name || `report-${doc.id}`)
     } catch {
       toast.error('Could not download the report.')
     } finally {
@@ -214,7 +206,7 @@ export function PatientReports() {
         icon={FileText}
         actions={
           <div className="flex flex-wrap gap-2">
-            <LabReportUploadDialog patientId={patientId} queryScope="patient" />
+            <Button asChild><Link to="/patient/lab-reports/upload"><FlaskConical className="size-4" />Upload lab report</Link></Button>
             <UploadDialog patientId={patientId} />
           </div>
         }
@@ -223,9 +215,7 @@ export function PatientReports() {
       {/* ── Lab Reports ─────────────────────────────────────────────── */}
       <section className="space-y-3">
         <SectionTitle
-          action={<LabReportUploadDialog patientId={patientId} queryScope="patient" trigger={
-            <Button variant="secondary" size="sm"><FlaskConical className="size-3.5" />Upload lab report</Button>
-          } />}
+          action={<Button asChild variant="secondary" size="sm"><Link to="/patient/lab-reports"><FlaskConical className="size-3.5" />All lab reports</Link></Button>}
         >
           Laboratory reports
         </SectionTitle>
@@ -238,8 +228,8 @@ export function PatientReports() {
             <EmptyState
               icon={FlaskConical}
               title="No laboratory reports yet"
-              description="Upload a blood test, imaging report, or any lab result. The system will automatically extract clinical values and update your health record."
-              action={<LabReportUploadDialog patientId={patientId} queryScope="patient" />}
+              description="Upload a lab report to fill in your health cards. You check the values before anything changes."
+              action={<Button asChild><Link to="/patient/lab-reports/upload">Upload lab report</Link></Button>}
             />
           }
         >

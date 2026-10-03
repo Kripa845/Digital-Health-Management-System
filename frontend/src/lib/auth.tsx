@@ -31,8 +31,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  const logout = useCallback(() => {
-    authService.logout()
+  const logout = useCallback(async () => {
+    // Wait for the server to revoke the refresh token before leaving the page.
+    await authService.logout()
     setUser(null)
     window.location.href = '/login'
   }, [])

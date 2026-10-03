@@ -1,0 +1,50 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+5 0 obj
+<< /Length 772 >>
+stream
+BT
+/F1 10 Tf
+13 TL
+50 790 Td
+(KATHMANDU VALLEY DIAGNOSTIC LABORATORY) Tj T*
+(Lalitpur-3, Nepal  |  Phone 01-5550100  |  This is a sample report) Tj T*
+() Tj T*
+(Patient ID : PAT-0E2E0001          Report Date : 14/09/2026) Tj T*
+(Patient Name : Ms. Asha Gurung     Age/Sex : 34 Y / F) Tj T*
+(Ref. By : Dr. A. Sharma            Sample : Venous blood) Tj T*
+() Tj T*
+(TEST                        RESULT      UNIT       REFERENCE) Tj T*
+(Haemoglobin \(Hb\)            12.8        g/dL       12.0-15.5) Tj T*
+(T. Chol                     5.2         mmol/L     < 5.2) Tj T*
+(RBS \(Random Blood Sugar\)    142         mg/dL      70-140) Tj T*
+(Blood Group                 O +ve) Tj T*
+() Tj T*
+(Results relate only to the sample tested. Fake data for software testing.) Tj T*
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000309 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1132
+%%EOF

@@ -65,3 +65,15 @@ export function formatTime(value?: string | null) {
   d.setHours(Number(h), Number(m), 0, 0)
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
+
+/** Save a Blob fetched from the API as a file in the browser. */
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}

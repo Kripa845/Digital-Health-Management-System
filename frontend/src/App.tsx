@@ -17,6 +17,9 @@ const PatientAppointments = lazy(() => import('@/features/patient/PatientAppoint
 const PatientReports = lazy(() => import('@/features/patient/PatientReports').then((m) => ({ default: m.PatientReports })))
 const PatientFindCare = lazy(() => import('@/features/patient/PatientFindCare').then((m) => ({ default: m.PatientFindCare })))
 const PatientProfile = lazy(() => import('@/features/patient/PatientProfile').then((m) => ({ default: m.PatientProfile })))
+const LabUploadPage = lazy(() => import('@/features/lab-reports/LabUploadPage').then((m) => ({ default: m.LabUploadPage })))
+const LabConfirmPage = lazy(() => import('@/features/lab-reports/LabConfirmPage').then((m) => ({ default: m.LabConfirmPage })))
+const LabHistoryPage = lazy(() => import('@/features/lab-reports/LabHistoryPage').then((m) => ({ default: m.LabHistoryPage })))
 
 const DoctorDashboard = lazy(() => import('@/features/doctor/DoctorDashboard').then((m) => ({ default: m.DoctorDashboard })))
 const DoctorPatients = lazy(() => import('@/features/doctor/DoctorPatients').then((m) => ({ default: m.DoctorPatients })))
@@ -32,6 +35,8 @@ const AdminRecommendations = lazy(() => import('@/features/admin/AdminRecommenda
 const AdminAccessRequests = lazy(() => import('@/features/admin/AdminAccessRequests').then((m) => ({ default: m.AdminAccessRequests })))
 const AdminAudit = lazy(() => import('@/features/admin/AdminAudit').then((m) => ({ default: m.AdminAudit })))
 const AdminSettings = lazy(() => import('@/features/admin/AdminSettings').then((m) => ({ default: m.AdminSettings })))
+const SymptomCheckerPage = lazy(() => import('@/features/symptom-checker/SymptomCheckerPage').then((m) => ({ default: m.SymptomCheckerPage })))
+const AdminLabReview = lazy(() => import('@/features/admin/AdminLabReview').then((m) => ({ default: m.AdminLabReview })))
 
 function RouteFallback() {
   return (
@@ -71,6 +76,8 @@ export default function App() {
             <Route path="/admin/access-requests" element={shell(<AdminAccessRequests />)} />
             <Route path="/admin/audit" element={shell(<AdminAudit />)} />
             <Route path="/admin/settings" element={shell(<AdminSettings />)} />
+            <Route path="/admin/lab-review" element={shell(<AdminLabReview />)} />
+            <Route path="/admin/symptom-checker" element={shell(<SymptomCheckerPage />)} />
           </Route>
 
           <Route element={<RoleRoute role="DOCTOR" />}>
@@ -87,7 +94,11 @@ export default function App() {
             <Route path="/patient/appointments" element={shell(<PatientAppointments />)} />
             <Route path="/patient/reports" element={shell(<PatientReports />)} />
             <Route path="/patient/find-care" element={shell(<PatientFindCare />)} />
+            <Route path="/patient/symptom-checker" element={shell(<SymptomCheckerPage />)} />
             <Route path="/patient/profile" element={shell(<PatientProfile />)} />
+            <Route path="/patient/lab-reports" element={shell(<LabHistoryPage />)} />
+            <Route path="/patient/lab-reports/upload" element={shell(<LabUploadPage />)} />
+            <Route path="/patient/lab-reports/:id/confirm" element={shell(<LabConfirmPage />)} />
           </Route>
         </Route>
 

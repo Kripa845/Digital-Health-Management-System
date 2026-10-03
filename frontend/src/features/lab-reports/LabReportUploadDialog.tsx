@@ -1,13 +1,13 @@
 /**
  * LabReportUploadDialog
  * ---------------------
- * Reusable upload dialog that runs the full OCR + CDSA pipeline on the
- * backend and surfaces the processing summary to the user.
+ * Upload → the server reads the report and checks the patient ID (and name, age) against
+ * the patient → preview of the values (nothing saved yet) → confirm or discard.
  *
  * Props
  *   patientId   – numeric Patient.id to upload for (required)
  *   trigger     – custom trigger element; defaults to a "Upload lab report" Button
- *   onSuccess   – callback fired with the completed LabReport after processing
+ *   onSuccess   – callback fired with the LabReport after the user confirms it
  */
 
 import { useRef, useState } from 'react'
@@ -24,11 +24,12 @@ import {
   DialogFooter, DialogClose,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { labReportService } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
+import { apiErrorBody, labReportService } from '@/lib/api'
+import { invalidateLab } from './hooks'
 import { formatBytes } from '@/lib/utils'
-import type { LabReport } from '@/lib/types'
+import type { LabReport, LabUploadErrorCode } from '@/lib/types'
 import { LabReportSummary } from './LabReportSummary'
+import { LabReportPreview } from './LabReportPreview'
 
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
 const ALLOWED = ['pdf', 'png', 'jpg', 'jpeg']
@@ -40,7 +41,36 @@ function validateFile(f: File): string | null {
   return null
 }
 
-type Step = 'form' | 'uploading' | 'processing' | 'done' | 'error'
+type Step = 'form' | 'uploading' | 'preview' | 'review' | 'done' | 'error'
+
+const ERROR_HELP: Partial<Record<LabUploadErrorCode | 'network_error', { title: string; hints: string[] }>> = {
+  patient_id_mismatch: {
+    title: 'Patient ID does not match this patient',
+    hints: [
+      'Check that you selected the right report and the right patient.',
+      'Nothing was saved and the file was not kept.',
+    ],
+  },
+  invalid_file: { title: 'This file cannot be used', hints: ['Upload a PDF, PNG or JPG that is not damaged or renamed.'] },
+  file_too_large: { title: 'The file is too large', hints: ['The limit is 10 MB.'] },
+  unreadable: {
+    title: 'The file could not be read',
+    hints: ['Upload a sharper scan or photo', 'Use a machine-printed PDF if the lab provides one', 'Make sure the file is not password-protected'],
+  },
+  no_text: {
+    title: 'No text was found in the file',
+    hints: ['Blurry or very dark photo', 'Handwritten report', 'Scan of the wrong page'],
+  },
+  values_not_usable: {
+    title: 'The values on this report could not be used',
+    hints: [
+      'They are outside the expected ranges or could not be read clearly',
+      'Check the report, or enter the values in the patient record instead',
+    ],
+  },
+  network_error: { title: 'Could not reach the server', hints: ['Check the connection and try again.'] },
+  server_error: { title: 'Something went wrong', hints: ['Please try again in a moment.'] },
+}
 
 interface Props {
   patientId: number
@@ -57,7 +87,6 @@ export function LabReportUploadDialog({
   onSuccess,
 }: Props) {
   const qc = useQueryClient()
-  const { refresh: refreshAuth } = useAuth()
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<Step>('form')
   const [name, setName] = useState('')
@@ -65,6 +94,7 @@ export function LabReportUploadDialog({
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<LabReport | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   function reset() {
@@ -74,57 +104,42 @@ export function LabReportUploadDialog({
     setProgress(0)
     setResult(null)
     setErrorMsg('')
+    setErrorCode(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const uploadMut = useMutation({
     mutationFn: () =>
-      labReportService.upload(patientId, name.trim(), file as File, (pct) => {
-        // 0-70 = upload transfer; 70-100 is server-side OCR (we fake-animate later)
-        setProgress(Math.min(pct * 0.7, 70))
+      labReportService.upload(file as File, {
+        name: name.trim(),
+        patientId,
+        // 0-70 = upload transfer; 70-100 is server-side reading
+        onProgress: (pct) => setProgress(Math.min(pct * 0.7, 70)),
       }),
     onMutate: () => {
       setStep('uploading')
       setProgress(0)
     },
-    onSuccess: async (data) => {
+    onSuccess: (data) => {
+      // The report is read and identity-checked but nothing is saved yet:
+      // show the preview so the user can confirm or discard it.
       setProgress(100)
       setResult(data)
-      setStep('done')
-
-      // 1. Refresh the AuthProvider's user state — this is what drives
-      //    user.patient_profile in every component that calls useAuth().
-      //    Awaiting it means the new vitals are in React state before the
-      //    user dismisses the dialog and navigates back to the dashboard.
-      await refreshAuth()
-
-      // 2. Invalidate TanStack Query caches so any other consumers
-      //    (lab-report list, patient records) also refetch.
-      qc.invalidateQueries({ queryKey: [queryScope, 'lab-reports', patientId] })
-      qc.invalidateQueries({ queryKey: [queryScope, 'lab-reports'] })
-      qc.invalidateQueries({ queryKey: ['auth', 'me'] })
-      qc.invalidateQueries({ queryKey: [queryScope, 'patients'] })
-
-      if (onSuccess) onSuccess(data)
+      setStep(data.status === 'NEEDS_REVIEW' ? 'review' : 'preview')
+      if (data.status === 'NO_VALUES_SAVEABLE') toast.info('No card values were found. You can still save this report as a document. Health cards will not change.')
+      invalidateLab(qc)
     },
-    onError: (err: any) => {
-      const httpStatus = err?.response?.status
-      const detail =
-        err?.response?.data?.detail ||
-        err?.response?.data?.file?.[0] ||
-        err?.response?.data?.name?.[0] ||
-        err?.message ||
-        'Upload failed. Please try again.'
-
-      // 409 = duplicate already completed — surface as a warning, not a failure
-      if (httpStatus === 409) {
-        toast.warning(detail)
+    onError: (err) => {
+      const body = apiErrorBody(err)
+      // 409 = duplicate already uploaded — surface as a warning, not a failure
+      if (body.code === 'duplicate') {
+        toast.warning(body.message)
         setOpen(false)
         reset()
         return
       }
-
-      setErrorMsg(detail)
+      setErrorMsg(body.message)
+      setErrorCode(body.code)
       setStep('error')
     },
   })
@@ -156,7 +171,17 @@ export function LabReportUploadDialog({
     uploadMut.mutate()
   }
 
-  const canClose = step === 'form' || step === 'done' || step === 'error'
+  // Closing at the preview step keeps the report "awaiting confirmation" in the
+  // reports list, where it can still be confirmed or discarded.
+  const canClose = step !== 'uploading'
+
+  function handleConfirmed(report: LabReport) {
+    setResult(report)
+    setStep('done')
+    // Make sure every consumer of the patient record refetches.
+    qc.invalidateQueries({ queryKey: ['auth', 'me'] })
+    if (onSuccess) onSuccess(report)
+  }
 
   return (
     <Dialog
@@ -184,8 +209,8 @@ export function LabReportUploadDialog({
             Upload laboratory report
           </DialogTitle>
           <DialogDescription>
-            Upload a PDF or image of a laboratory report. The system will automatically
-            extract clinical values and update the patient's health record.
+            Upload a PDF or image of a laboratory report. The values are read automatically and
+            shown to you for checking before the health cards are updated.
           </DialogDescription>
         </DialogHeader>
 
@@ -244,8 +269,8 @@ export function LabReportUploadDialog({
             <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] border border-info/30 bg-info-soft/40 px-3.5 py-3 text-sm text-info">
               <Info className="mt-0.5 size-4 shrink-0" />
               <p>
-                The original file will be stored unchanged. OCR extracts clinical values
-                automatically — the report itself is never modified.
+                The patient ID on the report must match the patient, or nothing is changed.
+                The original file is stored encrypted and can be downloaded later.
               </p>
             </div>
 
@@ -255,7 +280,7 @@ export function LabReportUploadDialog({
               </DialogClose>
               <Button type="submit">
                 <Upload className="size-4" />
-                Upload &amp; process
+                Upload &amp; read
               </Button>
             </DialogFooter>
           </form>
@@ -301,8 +326,8 @@ export function LabReportUploadDialog({
               {[
                 { label: 'File uploaded', done: progress >= 70 },
                 { label: 'OCR text extraction', done: progress >= 85 },
-                { label: 'Medical value extraction', done: progress >= 95 },
-                { label: 'Patient record update (CDSA)', done: progress >= 100 },
+                { label: 'Name and age check', done: progress >= 95 },
+                { label: 'Values ready to review', done: progress >= 100 },
               ].map((s) => (
                 <li key={s.label} className="flex items-center gap-2.5 text-sm">
                   {s.done
@@ -315,15 +340,45 @@ export function LabReportUploadDialog({
           </div>
         )}
 
+        {/* ── PREVIEW step: nothing saved until confirmed ───────────── */}
+        {step === 'preview' && result && (
+          <LabReportPreview
+            report={result}
+            patientId={patientId}
+            queryScope={queryScope}
+            onConfirmed={handleConfirmed}
+            onDiscarded={() => { setOpen(false); reset() }}
+          />
+        )}
+
+        {/* ── REVIEW step: identity could not be verified ───────────── */}
+        {step === 'review' && result && (
+          <div className="space-y-4" role="status">
+            <div className="rounded-[var(--radius-md)] border border-info/30 bg-info-soft/40 px-4 py-3 text-sm">
+              <p className="font-semibold text-info">Sent for review</p>
+              <p className="mt-1 text-muted-foreground">
+                The report could not be verified automatically, so nothing was applied. Review it under
+                Lab Report Review before the values can be confirmed.
+              </p>
+              {!!result.review_messages?.length && (
+                <ul className="mt-2 list-disc pl-5">{result.review_messages.map((m) => <li key={m}>{m}</li>)}</ul>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => { setOpen(false); reset() }}>Close</Button>
+            </DialogFooter>
+          </div>
+        )}
+
         {/* ── DONE step ─────────────────────────────────────────────── */}
         {step === 'done' && result && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-success/30 bg-success-soft/40 px-4 py-3">
               <CheckCircle2 className="size-5 shrink-0 text-success" />
               <div>
-                <p className="text-sm font-semibold text-success">Lab report processed successfully</p>
+                <p className="text-sm font-semibold text-success">Health record updated</p>
                 <p className="text-xs text-muted-foreground">
-                  Patient health record updated · Original file stored unchanged
+                  The report is saved in the history · Original file stored encrypted
                 </p>
               </div>
             </div>
@@ -347,20 +402,24 @@ export function LabReportUploadDialog({
             <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-danger/30 bg-danger-soft/40 px-4 py-3">
               <AlertCircle className="mt-0.5 size-5 shrink-0 text-danger" />
               <div>
-                <p className="text-sm font-semibold text-danger">Processing failed</p>
+                <p className="text-sm font-semibold text-danger">
+                  {(errorCode && ERROR_HELP[errorCode as LabUploadErrorCode]?.title) || 'The report could not be used'}
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">{errorMsg}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Nothing was saved.</p>
               </div>
             </div>
 
-            <div className="rounded-[var(--radius-md)] border border-border bg-surface-2 p-4 text-sm text-muted-foreground space-y-1">
-              <p className="font-medium text-foreground">Common causes:</p>
-              <ul className="list-disc pl-4 space-y-0.5">
-                <li>Blurry or low-resolution scan</li>
-                <li>Handwritten report (not machine-printed)</li>
-                <li>Unsupported language or non-standard layout</li>
-                <li>Tesseract OCR not installed on the server</li>
-              </ul>
-            </div>
+            {!!(errorCode ? ERROR_HELP[errorCode as LabUploadErrorCode]?.hints.length : 1) && (
+              <div className="rounded-[var(--radius-md)] border border-border bg-surface-2 p-4 text-sm text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">What you can do:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  {((errorCode ? ERROR_HELP[errorCode as LabUploadErrorCode]?.hints : ERROR_HELP.unreadable?.hints) ?? []).map((h) => (
+                    <li key={h}>{h}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <DialogFooter>
               <Button variant="secondary" onClick={reset}>Try again</Button>

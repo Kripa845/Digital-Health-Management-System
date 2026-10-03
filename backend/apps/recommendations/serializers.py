@@ -2,10 +2,10 @@ from rest_framework import serializers
 from django.core.validators import MinValueValidator, MaxValueValidator
 from apps.recommendations.models import RecommendationHistory
 from apps.doctors.models import Doctor
-from apps.doctors.serializers import DoctorSerializer
+from apps.doctors.serializers import PublicDoctorSerializer
 
 class RecommendationHistorySerializer(serializers.ModelSerializer):
-    recommended_doctor_detail = DoctorSerializer(source='recommended_doctor', read_only=True)
+    recommended_doctor_detail = PublicDoctorSerializer(source='recommended_doctor', read_only=True)
     patient_name = serializers.SerializerMethodField(read_only=True)
     related_doctors = serializers.SerializerMethodField(read_only=True)
 
@@ -35,7 +35,7 @@ class RecommendationHistorySerializer(serializers.ModelSerializer):
             return []
         dept = obj.recommended_department
         doctors = Doctor.objects.filter(department=dept, status='Active').exclude(id=obj.recommended_doctor.id)
-        serializer = DoctorSerializer(doctors, many=True)
+        serializer = PublicDoctorSerializer(doctors.select_related('user'), many=True)
         return serializer.data
 
     def validate_age(self, value):

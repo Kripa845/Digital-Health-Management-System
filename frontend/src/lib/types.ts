@@ -170,7 +170,8 @@ export interface MedDocument {
   id: number
   patient: number
   name: string
-  file: string
+  /** Not returned by the API; files are fetched through the download endpoint. */
+  file?: string
   file_type?: string
   size?: number | null
   uploaded_at: string
@@ -212,6 +213,35 @@ export interface Recommendation {
   recommendation_date?: string
   patient?: number | null
   patient_name?: string
+}
+
+/** POST /smart-symptom-check/ (Naive Bayes + TOPSIS). Any status other than "ok" falls back to the keyword check. */
+export type SmartCheckStatus = 'ok' | 'not_enough_info' | 'low_confidence' | 'model_unavailable'
+
+export interface SmartCheckDoctor {
+  id: number
+  name: string
+  department: string
+  specialization: string
+  score: number
+  free_hours: number
+  caseload: number
+  reason: string
+}
+
+export interface SmartCheckResult {
+  status: SmartCheckStatus
+  symptoms: string[]
+  illnesses?: { name: string; probability: number }[]
+  department?: string
+  dept_probability?: number
+  doctors?: SmartCheckDoctor[]
+  doctors_department?: string | null
+  doctors_note?: string
+  history_id?: number
+  /** The patient the check was saved for (null for a guest check). */
+  patient?: { id: number; patient_id: string; name: string } | null
+  disclaimer: string
 }
 
 export interface Notification {
@@ -270,45 +300,168 @@ export interface Paginated<T> {
 }
 
 // ── Lab Reports ───────────────────────────────────────────────────────────────
+// Mirrors the API contract in docs/lab-reports-api.md. The backend enforces all
+// medical and matching rules; the frontend only displays what it returns.
 
-export type LabReportStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-export type LabFieldChangeStatus = 'INSERTED' | 'UPDATED' | 'UNCHANGED'
+/**
+ * PENDING_CONFIRMATION: identity verified, preview waiting for the user to confirm.
+ * NEEDS_REVIEW: the identity gate could not verify the report; an admin decides.
+ * REJECTED: an admin rejected it. CONFIRMED: applied to the record.
+ */
+export type LabReportStatus =
+  | 'PENDING' | 'PROCESSING' | 'PENDING_CONFIRMATION' | 'NEEDS_REVIEW' | 'REJECTED' | 'CONFIRMED' | 'FAILED'
+  /** No health card values: waits for "Save report only". */
+  | 'NO_VALUES_SAVEABLE'
+  /** Kept as a document only; no values or history rows. */
+  | 'SAVED_NO_VALUES'
+
+/**
+ * Planned outcome while PENDING_CONFIRMATION, actual outcome once CONFIRMED.
+ * SKIPPED: not saved (see `flag` / `skip_reason`). HISTORY: kept in history only,
+ * because a newer result is already shown.
+ */
+export type LabFieldChangeStatus = 'INSERTED' | 'UPDATED' | 'UNCHANGED' | 'SKIPPED' | 'HISTORY'
+
+/** Why a value was not saved. Only `out_of_range` values can be accepted on confirm. */
+export type LabFieldFlag = '' | 'out_of_range' | 'unknown_unit' | 'invalid' | 'blood_group_conflict' | 'too_large'
 
 export interface LabReportField {
   id: number
   field_name: string
   patient_field: string
+  /** Value and unit as printed on the report. */
   extracted_value: string
-  previous_value: string
   unit: string
+  /** Value and unit used on the dashboard (after unit conversion). */
+  converted_value: string
+  converted_unit: string
+  previous_value: string
   reference_range: string
   change_status: LabFieldChangeStatus
+  skip_reason: string
+  flag: LabFieldFlag
 }
+
+export interface ExtractedValue { value: string; unit: string }
 
 export interface LabReport {
   id: number
   patient: number
   patient_name?: string
   patient_id_code?: string
-  file: string
   name: string
   file_type?: string
   size?: number | null
   uploaded_by?: number | null
   uploaded_by_name?: string | null
   uploaded_at: string
+  /** Date printed on the report, when it could be read. */
+  report_date?: string | null
+  identity_verified?: boolean
   status: LabReportStatus
   error_message?: string
-  ocr_text?: string
   detected_count: number
   updated_count: number
   unchanged_count: number
   processed_at?: string | null
+  confirmed_at?: string | null
+  confirmed_by_name?: string | null
+  ocr_confidence?: number | null
+  review_reasons?: string[]
+  review_messages?: string[]
+  review_note?: string
+  reviewed_at?: string | null
+  /** Values read from the report; tests that were not found are null. */
+  extracted?: {
+    report_date: string | null
+    blood_group: string | null
+    tests: Record<'hemoglobin' | 'cholesterol_total' | 'blood_sugar_random', ExtractedValue | null>
+    other_tests: Record<string, ExtractedValue>
+  }
   // Nested
   fields?: LabReportField[]
   detected_fields?: LabReportField[]
   updated_fields?: LabReportField[]
   unchanged_fields?: LabReportField[]
-  // detail message from server when no fields found
-  detail?: string
+  skipped_fields?: LabReportField[]
+  /** Which label the date came from: 'reporting', 'collection', 'user' (typed in the preview) or ''. */
+  report_date_source?: string
+  report_date_user_entered?: boolean
+  /** Report date ordering check (null once confirmed or rejected). */
+  date_check_status?: 'ok' | 'first_report' | 'older_than_latest' | 'date_missing' | null
+  latest_report_date?: string | null
+  date_message?: string
+  /** True when confirming needs acknowledge_older_report. */
+  date_ack_required?: boolean
+  /** No health card values were found; the report can be kept as a document only. */
+  can_save_without_values?: boolean
+  no_values_message?: string
 }
+
+/** Review queue item (admin only): includes what was read from the report header. */
+export interface LabReviewItem extends LabReport {
+  identity: { patient_id: string | null; name: string | null; dob: string | null }
+}
+
+export interface LabReportStatusInfo {
+  id: number
+  status: LabReportStatus
+  review_reasons: string[]
+  review_messages: string[]
+  review_note: string
+  uploaded_at: string
+  reviewed_at: string | null
+  confirmed_at: string | null
+  updated_count: number
+}
+
+export interface ConfirmPayload {
+  /** Corrected values, in the dashboard unit, keyed by test (e.g. { hemoglobin: "13.9" }). */
+  values?: Record<string, string>
+  /** Out-of-range tests the user explicitly accepts. */
+  accept_flagged?: string[]
+  /** Required to confirm a report older than the latest confirmed one. */
+  acknowledge_older_report?: boolean
+}
+
+export type LabResultStatus = 'Low' | 'Normal' | 'High'
+
+export interface DashboardTest {
+  test: string
+  label: string
+  unit: string
+  latest: { value: string; date: string | null } | null
+  status: LabResultStatus | null
+  /** Far outside the normal range. */
+  severe: boolean
+  reference: string
+  history: { date: string; value: number }[]
+  trend: 'up' | 'down' | 'stable' | null
+}
+
+export interface LabDashboard {
+  patient_id: string
+  age: number | null
+  gender: string
+  blood_group: string | null
+  body: {
+    height: string | null
+    weight: string | null
+    bmi: number | null
+    bmi_status: LabResultStatus | null
+    bmi_severe: boolean
+  }
+  tests: DashboardTest[]
+  disclaimer: string
+}
+
+/** Error body returned by the lab report endpoints. */
+export interface ApiErrorBody {
+  code: LabUploadErrorCode | string
+  message: string
+  errors?: Record<string, string | string[]>
+}
+
+export type LabUploadErrorCode =
+  | 'invalid_file' | 'file_too_large' | 'unreadable' | 'no_text' | 'no_values' | 'values_not_usable' | 'duplicate'
+  | 'patient_id_mismatch' | 'invalid_values' | 'not_pending' | 'server_error'

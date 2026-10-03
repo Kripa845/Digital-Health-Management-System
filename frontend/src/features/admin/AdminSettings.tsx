@@ -18,7 +18,9 @@ import {
 import { PageHeader, DataState, EmptyState, ListSkeleton, InfoRow } from '@/components/patterns'
 import { authService } from '@/lib/api'
 import type { CurrentUser } from '@/lib/types'
-import { apiError } from './admin-common'
+import {
+  apiError,
+} from './admin-utils'
 
 type AdminForm = { username: string; email: string; first_name: string; last_name: string; password: string }
 const EMPTY_ADMIN: AdminForm = { username: '', email: '', first_name: '', last_name: '', password: '' }

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 
-export function scorePassword(pw: string): { score: number; label: string } {
+function scorePassword(pw: string): { score: number; label: string } {
   let score = 0
   if (pw.length >= 8) score++
   if (pw.length >= 12) score++

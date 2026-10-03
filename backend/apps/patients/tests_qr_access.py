@@ -38,7 +38,7 @@ class QRAccessIntegrationTest(TestCase):
         )
         self.patient = Patient.objects.create(
             user=self.patient_user,
-            patient_id=Patient.generate_patient_id(),
+            patient_id='PAT-7E570001',
             first_name='Test',
             last_name='Patient',
             dob='1990-01-01',
@@ -138,7 +138,7 @@ class QRAccessIntegrationTest(TestCase):
             file='test.pdf',
             name='Test Report',
             uploaded_by=self.admin_user,
-            status='COMPLETED',
+            status='CONFIRMED',
         )
         self.authenticate(self.doctor_token)
         url = f'/api/v1/lab-reports/{lab.id}/'
@@ -153,7 +153,7 @@ class QRAccessIntegrationTest(TestCase):
             file='test.pdf',
             name='Test Report',
             uploaded_by=self.admin_user,
-            status='COMPLETED',
+            status='CONFIRMED',
         )
         self.authenticate(self.doctor_token)
         url = f'/api/v1/lab-reports/{lab.id}/'

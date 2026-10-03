@@ -17,6 +17,7 @@ def healthz(request):
 # Views import
 from apps.users.views import (
     LoginView,
+    LogoutView,
     UserProfileView,
     AdminPasswordResetView,
     AdminManageAdminsView,
@@ -26,11 +27,11 @@ from apps.users.views import (
 from apps.patients.views import PatientViewSet
 from apps.doctors.views import DoctorViewSet, DoctorAssignmentViewSet, PrescriptionViewSet, AccessRequestViewSet
 from apps.recommendations.views import RecommendationHistoryViewSet
+from apps.recommendations.smart_views import SmartSymptomCheckView
 from apps.documents.views import DocumentViewSet
 from apps.audit.views import AuditLogViewSet
 from apps.appointments.views import AppointmentViewSet
 from apps.notifications.views import NotificationViewSet
-from apps.lab_reports.views import LabReportViewSet
 
 # API Routers
 router = DefaultRouter()
@@ -44,7 +45,6 @@ router.register(r'documents', DocumentViewSet, basename='document')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 router.register(r'appointments', AppointmentViewSet, basename='appointment')
 router.register(r'notifications', NotificationViewSet, basename='notification')
-router.register(r'lab-reports', LabReportViewSet, basename='lab-report')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -55,6 +55,8 @@ urlpatterns = [
     # Authentication & Profile
     path('api/v1/auth/login/', LoginView.as_view(), name='token_obtain_pair'),
     path('api/v1/auth/token/refresh/', PublicTokenRefreshView.as_view(), name='token_refresh'),
+    path('api/v1/auth/refresh/', PublicTokenRefreshView.as_view(), name='token_refresh_short'),
+    path('api/v1/auth/logout/', LogoutView.as_view(), name='logout'),
     path('api/v1/auth/me/', UserProfileView.as_view(), name='user_profile'),
     path('api/v1/auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
 
@@ -63,8 +65,12 @@ urlpatterns = [
     path('api/v1/auth/admin/manage-admins/', AdminManageAdminsView.as_view(), name='admin_manage_admins'),
     path('api/v1/auth/admin/stats/', AdminDashboardStatsView.as_view(), name='admin_stats'),
 
+    # Smart symptom check (Naive Bayes + TOPSIS); the keyword checker stays at /recommendations/
+    path('api/v1/smart-symptom-check/', SmartSymptomCheckView.as_view(), name='smart_symptom_check'),
+
     # Registered resource routes
     path('api/v1/', include(router.urls)),
+    path('api/v1/', include('apps.lab_reports.urls')),
 ]
 
 if settings.DEBUG:
