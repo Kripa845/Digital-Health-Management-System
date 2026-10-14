@@ -29,7 +29,7 @@ export function Wordmark({ className, size = 'md' }: { className?: string; size?
     <span className={cn('flex items-center gap-2.5', className)}>
       <Logo className={logoSize} />
       <span className={cn('font-display font-semibold tracking-tight leading-none', textSize)}>
-        Mero<span className="text-primary"> Care</span>
+        Mero<span className="text-primary"> Care Card</span>
       </span>
     </span>
   )

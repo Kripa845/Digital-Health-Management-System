@@ -142,8 +142,7 @@ function EditProfileDialog({ patient, open, onOpenChange }: {
           {(form.first_name.trim() !== initial.first_name.trim() || form.last_name.trim() !== initial.last_name.trim()
             || form.middle_name.trim() !== initial.middle_name.trim()) && (
             <p className="rounded-[var(--radius-md)] bg-warning-soft px-3 py-2 text-xs text-warning">
-              Use your name exactly as it appears on your lab reports, or uploaded reports won't match.
-              Your care team is notified when you change your name. You still sign in with the same username.
+              Use your name exactly as on your lab reports. Your care team will be notified.
             </p>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -168,9 +167,6 @@ function EditProfileDialog({ patient, open, onOpenChange }: {
             <Input id="pp-photo" type="file" accept="image/png,image/jpeg"
               onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
           </Field>
-          <p className="text-xs text-muted-foreground">
-            Your date of birth, gender, blood group and medical details can only be changed by your care team.
-          </p>
           <DialogFooter>
             <DialogClose asChild><Button type="button" variant="secondary" disabled={save.isPending}>Cancel</Button></DialogClose>
             <Button type="submit" loading={save.isPending}>Save changes</Button>
@@ -214,7 +210,7 @@ export function PatientProfile() {
     <div className="space-y-8">
       <PageHeader
         title="My profile"
-        description="Your details on file. You can update your name, contact details and photo."
+        description="Your details on file."
         icon={UserCircle}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -309,9 +305,7 @@ export function PatientProfile() {
       <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border bg-surface-2/50 p-4">
         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
         <p className="text-sm text-muted-foreground text-pretty">
-          You can change your name, phone numbers, email, address and photo with <strong>Edit profile</strong>.
-          To keep your medical information accurate, your date of birth, gender, blood group and medical details
-          can only be changed by your care team.
+          Date of birth, gender, blood group and medical details can only be changed by your care team.
         </p>
       </div>
     </div>

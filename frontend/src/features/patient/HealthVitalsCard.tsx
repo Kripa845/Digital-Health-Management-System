@@ -86,8 +86,11 @@ function SmallTile({ test }: { test: DashboardTest }) {
   )
 }
 
-export function HealthVitalsCard() {
-  const { data, isLoading, isError, refetch } = useDashboard()
+/** Without `patientId` it shows the logged-in patient's own dashboard; doctors
+ *  with approved access and admins pass the patient they are viewing. */
+export function HealthVitalsCard({ patientId }: { patientId?: number } = {}) {
+  const { data, isLoading, isError, refetch } = useDashboard(patientId)
+  const own = patientId == null
 
   return (
     <Card className="overflow-hidden">
@@ -98,12 +101,12 @@ export function HealthVitalsCard() {
           </span>
           <h2 className="text-sm font-semibold">Health vitals</h2>
         </div>
-        <Link
+        {own && <Link
           to="/patient/lab-reports/upload"
           className="flex items-center gap-1 rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary-soft/40"
         >
           <FlaskConical className="size-3" aria-hidden="true" />Upload lab report<ChevronRight className="size-3" aria-hidden="true" />
-        </Link>
+        </Link>}
       </div>
 
       <CardContent className="space-y-5 p-5">
@@ -115,7 +118,7 @@ export function HealthVitalsCard() {
 
         {isError && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <p className="text-muted-foreground">Your health vitals could not be loaded.</p>
+            <p className="text-muted-foreground">{own ? 'Your health vitals' : 'Health vitals'} could not be loaded.</p>
             <Button size="sm" variant="secondary" onClick={() => refetch()}>Retry</Button>
           </div>
         )}
@@ -163,9 +166,9 @@ export function HealthVitalsCard() {
 
             {!data.tests.some((t) => t.latest) && (
               <p className="text-sm text-muted-foreground">
-                No lab results yet.{' '}
+                No lab results yet.{own && <>{' '}
                 <Link to="/patient/lab-reports/upload" className="font-medium text-primary underline">Upload a lab report</Link>{' '}
-                to fill in your cards.
+                to fill in your cards.</>}
               </p>
             )}
 

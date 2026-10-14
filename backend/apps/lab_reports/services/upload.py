@@ -1,13 +1,4 @@
-"""The upload pipeline: file checks → text → extraction → identity gate → preview.
 
-Text comes from the PDF's own text layer, or OCR of the page images (scans and
-photos). If no usable dashboard value is found that way and the optional AI
-fallback is on (LAB_LLM_FALLBACK), the page images are read by Claude instead.
-
-Nothing is written to the patient record here; a report only becomes a
-preview (PENDING_CONFIRMATION) or goes to an admin (NEEDS_REVIEW). A report
-whose patient ID belongs to someone else is not stored at all.
-"""
 from __future__ import annotations
 
 import logging
@@ -28,7 +19,7 @@ from apps.lab_reports.cdsa import DASHBOARD_FIELDS
 from apps.lab_reports.models import LabReport
 from apps.lab_reports.services import files
 from apps.lab_reports.services.dashboard import build_preview
-from apps.lab_reports.services import date_check, llm
+from apps.lab_reports.services import date_check, llm, review, table_reader
 from apps.lab_reports.services import validator as v
 from apps.lab_reports.services.extractor import extract_report, find_patient_ids
 from apps.lab_reports.services.ocr import UnreadableFile, read_document
@@ -87,6 +78,11 @@ def _read(raw: bytes, ext: str, patient):
     except UnreadableFile as exc:
         raise UploadError('unreadable', f'This file could not be read. {exc}', status.HTTP_400_BAD_REQUEST)
     extracted = extract_report(ocr.text)
+    review.attach_confidences(extracted.values, ocr)      # AI fallback values below stay None
+    # Test values come from the rows of the report's results table (each with the unit and
+    # range printed on its own row, names matched exactly); see services/table_reader.py.
+    table = table_reader.read_values(raw, ext, ocr)
+    table_reader.merge_into(extracted, table)
     values = [x for x in extracted.values if x.patient_field in DASHBOARD_FIELDS]
     values_from = 'regex'
     tried_llm = False
@@ -110,8 +106,9 @@ def _read(raw: bytes, ext: str, patient):
         logger.info('Lab report text empty: ocr_error=%s', bool(ocr.ocr_error))
 
     # Method and sizes only: never names, IDs or values.
-    logger.info('Lab report read: source=%s text_length=%d values_from=%s values=%d usable=%d',
-                ocr.source or 'none', len(ocr.text), values_from, len(values), len(_usable(values)))
+    logger.info('Lab report read: source=%s text_length=%d table=%s values_from=%s values=%d usable=%d '
+                'unmatched_rows=%d', ocr.source or 'none', len(ocr.text), table.method or 'none', values_from,
+                len(values), len(_usable(values)), len(table.unmatched))
     gate = verify(extracted, patient, ocr.confidence)
     return ocr, extracted, gate, values, values_from
 

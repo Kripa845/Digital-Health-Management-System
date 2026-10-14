@@ -1,6 +1,8 @@
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
-from apps.recommendations.models import RecommendationHistory
+from apps.recommendations.models import RankingSettings, RecommendationHistory
+from ml.ahp import BENEFIT, CRITERIA, LABELS
 from apps.doctors.models import Doctor
 from apps.doctors.serializers import PublicDoctorSerializer
 
@@ -44,3 +46,26 @@ class RecommendationHistorySerializer(serializers.ModelSerializer):
         if value is not None and not (1 <= value <= 120):
             raise serializers.ValidationError("Age must be between 1 and 120 years.")
         return value
+
+
+class RankingSettingsSerializer(serializers.ModelSerializer):
+    """The AHP comparison matrix (writable) and the weights and CR computed from it."""
+    criteria = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = RankingSettings
+        fields = ('ahp_pairwise', 'ahp_weights', 'ahp_cr', 'criteria', 'updated_at')
+        read_only_fields = ('ahp_weights', 'ahp_cr', 'updated_at')
+        extra_kwargs = {'ahp_pairwise': {'required': True}}
+
+    def get_criteria(self, obj):
+        return [{'key': c, 'label': LABELS[c], 'benefit': BENEFIT[c]} for c in CRITERIA]
+
+    def validate(self, attrs):
+        # Run the model's own check (AHP weights, CR, weight guard) and report it as a 400.
+        probe = RankingSettings(ahp_pairwise=attrs.get('ahp_pairwise'))
+        try:
+            probe.clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict)
+        return attrs

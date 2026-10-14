@@ -1,17 +1,4 @@
-"""Preview, confirm (update rules) and dashboard data.
 
-Update rules on confirm
-    blood group   set only when the record has none; a different value is
-                  flagged and never overwrites the record
-    age           never taken from a report (always calculated from date of birth)
-    numeric tests every confirmed value becomes a new dated LabResult (history);
-                  the patient record shows the latest. A report dated before the
-                  current latest value is stored in history only.
-    flagged       out-of-range values are saved only when the user accepts them
-
-All writes for one confirmation happen in a single transaction with the report
-and patient rows locked, so a failure leaves the dashboard unchanged.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,6 +15,7 @@ from apps.lab_reports.cdsa import (
 )
 from apps.lab_reports.extractor import ExtractedField, display_name
 from apps.lab_reports.models import LabReport, LabReportField, LabResult
+from apps.lab_reports.services import review
 from apps.lab_reports.services import validator as v
 from apps.lab_reports.units import CANONICAL_UNITS
 
@@ -59,6 +47,7 @@ def build_preview(report: LabReport, values: list[ExtractedField]) -> Processing
             if ef.patient_field not in DASHBOARD_FIELDS:
                 continue
             row = _plan(patient, ef, report.effective_date, latest)
+            _mark_for_confirmation(row, ef)
             row.report = report
             row.save()
             result.add(row)
@@ -73,9 +62,14 @@ def build_preview(report: LabReport, values: list[ExtractedField]) -> Processing
 def replan_preview(report: LabReport) -> ProcessingResult:
     """Plan the preview again from its own rows, e.g. after the report date changed
     (an older date turns a value into history only). Changes nothing else."""
-    values = [ExtractedField(field_name=f.field_name, patient_field=f.patient_field,
-                             extracted_value=f.extracted_value, unit=f.unit, reference_range=f.reference_range)
-              for f in report.fields.all()]
+    values = []
+    for f in report.fields.all():
+        carried = [r for r in f.confirmation_reasons or [] if r.get('code') in review.READ_TIME_REASONS]
+        values.append(ExtractedField(
+            field_name=f.field_name, patient_field=f.patient_field, extracted_value=f.extracted_value, unit=f.unit,
+            reference_range=f.reference_range, ocr_confidence=f.ocr_confidence, review_reasons=carried,
+            suggested_value=next((r['value'] for r in carried if r.get('value')), ''),
+        ))
     return build_preview(report, values)
 
 
@@ -104,6 +98,24 @@ def _plan(patient, ef: ExtractedField, eff_date: date, latest: dict) -> LabRepor
         return row
 
     checked = v.check_value(pf, ef.extracted_value, ef.unit)
+    suggestion = None
+    fixed = v.check_value(pf, ef.suggested_value, ef.unit) if ef.suggested_value else None
+    if fixed and fixed.value is not None and fixed.flag in ('', v.OUT_OF_RANGE):
+        # Auto-corrected when the report was read (a decimal point lost on a scan): the
+        # corrected reading is shown as the value and saved only if the user confirms it.
+        checked = fixed
+        row.suggested_value = (fixed.value or '')[:50]
+    elif checked.flag in (v.INVALID, v.OUT_OF_RANGE):
+        suggestion = v.decimal_suggestion(pf, ef.extracted_value, ef.unit, ef.reference_range)
+    if suggestion and checked.flag == v.INVALID:
+        # A main test that would be dropped: the suggested reading is shown as the value
+        # to confirm, and is saved only if the user confirms it.
+        checked = v.check_value(pf, suggestion, ef.unit)
+        row.suggested_value = (checked.value or '')[:50]
+    elif suggestion:
+        # Out of range but can be accepted as is: the suggestion is only a hint.
+        checked.message = (f'{checked.message} If a decimal point was missed, it may be '
+                           f'{suggestion} {ef.unit}'.rstrip() + '.')
     row.converted_value = (checked.value or '')[:50]
     row.converted_unit = (checked.unit or '')[:20]
     if checked.flag:
@@ -118,6 +130,35 @@ def _plan(patient, ef: ExtractedField, eff_date: date, latest: dict) -> LabRepor
     return row
 
 
+def _mark_for_confirmation(row: LabReportField, ef: ExtractedField) -> None:
+    """Record the value's OCR confidence and whether it needs the user's confirmation."""
+    row.ocr_confidence = ef.ocr_confidence
+    if row.change_status == S.SKIPPED:
+        return                       # not going to be saved anyway
+    # Reasons found while reading the report's table (auto-corrected decimal point, two rows
+    # read as one test, ...) come first; the checks below then run on the corrected reading.
+    reasons = list(ef.review_reasons or [])
+    corrected = bool(ef.suggested_value and row.suggested_value)
+    reasons += review.reasons_for(ef.suggested_value if corrected else ef.extracted_value, ef.unit,
+                                  ef.ocr_confidence, ef.reference_range,
+                                  suggested='' if corrected or not row.suggested_value
+                                  else f'{row.suggested_value} {row.converted_unit}'.strip())
+    reasons = list({r['code']: r for r in reasons}.values())          # one message per reason
+    row.confirmation_reasons = reasons
+    row.needs_confirmation = bool(reasons)
+
+
+def _unconfirmed(row: LabReportField, confirmed: set) -> bool:
+    """Mark a value that needs confirmation and did not get it as not saved."""
+    if not row.needs_confirmation or row.patient_field in confirmed:
+        return False
+    row.change_status = S.SKIPPED
+    detail = ' '.join(r.get('message', '') for r in row.confirmation_reasons or []).strip()
+    row.skip_reason = (f'Not saved because it was not confirmed. {detail}').strip()[:255]
+    row.save()
+    return True
+
+
 # ── Confirm ──────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -128,12 +169,16 @@ class ConfirmOutcome:
 
 
 def apply_report(report: LabReport, user=None, edits: dict | None = None,
-                 accept_flagged=(), request=None) -> ConfirmOutcome:
+                 accept_flagged=(), confirmed=(), request=None) -> ConfirmOutcome:
     """Apply a previewed report. ``edits`` maps test → value typed by the user
     (in the dashboard unit); ``accept_flagged`` lists out-of-range tests the user
-    explicitly accepts. Raises NotPending or InvalidEdit (nothing is written)."""
+    explicitly accepts; ``confirmed`` lists values needing confirmation that the user
+    checked against the scan (a corrected value counts as confirmed). A value that needs
+    confirmation and is not confirmed is never saved. Raises NotPending or InvalidEdit
+    (nothing is written)."""
     edits = {k: str(val) for k, val in (edits or {}).items()}
     accept = set(accept_flagged or ())
+    confirmed = set(confirmed or ()) | set(edits)
 
     with transaction.atomic():
         report = LabReport.objects.select_for_update().get(pk=report.pk)
@@ -172,6 +217,9 @@ def apply_report(report: LabReport, user=None, edits: dict | None = None,
             row.skip_reason = ''
 
             if pf in _REVIEW_ONLY_PATIENT_FIELDS:
+                if _unconfirmed(row, confirmed):
+                    result.add(row)
+                    continue
                 group = v.normalise_blood_group(edits.get(pf, row.converted_value))
                 row.converted_value = (group or row.converted_value)[:50]
                 if not group:
@@ -206,6 +254,10 @@ def apply_report(report: LabReport, user=None, edits: dict | None = None,
                     row.save()
                     result.add(row)
                     continue
+
+            if _unconfirmed(row, confirmed):
+                result.add(row)
+                continue
 
             if row.flag == v.OUT_OF_RANGE and pf not in accept:
                 row.change_status = S.SKIPPED
@@ -257,6 +309,7 @@ def apply_report(report: LabReport, user=None, edits: dict | None = None,
                                    'error_message', 'confirmed_at', 'confirmed_by'])
 
         # Audit: counts and test names only, never values.
+        needs = {r.patient_field for r in rows if r.needs_confirmation}
         edited = sorted(checked_edits) + (['blood_group'] if 'blood_group' in edits else [])
         log_activity(
             user, 'CONFIRM_LAB_REPORT',
@@ -264,6 +317,8 @@ def apply_report(report: LabReport, user=None, edits: dict | None = None,
             f'{len(changed)} updated, {history_rows} saved to history, {result.needs_review_count} not saved'
             + (f'; edited by user: {", ".join(edited)}' if edited else '')
             + (f'; accepted out-of-range: {", ".join(sorted(accept & allowed))}' if accept & allowed else '')
+            + (f'; confirmed after review: {", ".join(sorted(needs & confirmed))}' if needs & confirmed else '')
+            + (f'; not confirmed (not saved): {", ".join(sorted(needs - confirmed))}' if needs - confirmed else '')
             + '.',
             request,
         )
@@ -354,7 +409,7 @@ DASHBOARD_TESTS = (
 # has a value for them, so every confirmed result is visible on the dashboard.
 EXTRA_TESTS = (
     'serum_creatinine', 'blood_urea', 'uric_acid', 'sodium', 'potassium',
-    'ssgpt_alt', 'ssgot_ast', 'bilirubin_total',
+    'ssgpt_alt', 'ssgot_ast', 'bilirubin_total', 'bilirubin_direct',
     'hematocrit', 'wbc_count', 'rbc_count', 'platelet_count', 'esr',
     'tsh', 't3', 't4',
 )
@@ -381,6 +436,7 @@ def _reference(test: str, gender: str) -> tuple[float | None, float | None, str]
         'ssgpt_alt': (None, 40),
         'ssgot_ast': (None, 40),
         'bilirubin_total': (0.1, 1.2),
+        'bilirubin_direct': (0.0, 0.3),
         'hematocrit': (36, 46) if female else (40, 50),
         'esr': (None, 20) if female else (None, 15),
         'tsh': (0.4, 4.0),

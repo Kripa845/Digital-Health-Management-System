@@ -19,6 +19,7 @@ from apps.patients.models import Patient
 from apps.doctors.models import Doctor
 from apps.patients.serializers import PatientSerializer
 from apps.doctors.serializers import DoctorSerializer
+from apps.audit.brute_force import check_failed_logins
 from apps.audit.utils import log_activity
 
 User = get_user_model()
@@ -67,6 +68,11 @@ class LoginView(APIView):
 
         user = authenticate(request, username=username, password=password)
         if user is None:
+            # Recorded for activity review only; the response is the same either way.
+            if len(match) == 1:
+                target = User.objects.get(username=username)
+                log_activity(target, 'LOGIN_FAILED', f"Failed login attempt for {username}.", request)
+                check_failed_logins(target)
             return Response(
                 {'detail': 'No account found with these credentials. Please check your username and password and try again.'},
                 status=status.HTTP_401_UNAUTHORIZED,

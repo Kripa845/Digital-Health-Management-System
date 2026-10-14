@@ -27,9 +27,11 @@ from apps.users.views import (
 from apps.patients.views import PatientViewSet
 from apps.doctors.views import DoctorViewSet, DoctorAssignmentViewSet, PrescriptionViewSet, AccessRequestViewSet
 from apps.recommendations.views import RecommendationHistoryViewSet
-from apps.recommendations.smart_views import SmartSymptomCheckView
+from apps.recommendations.smart_views import RankingSettingsView, SmartSymptomCheckView
 from apps.documents.views import DocumentViewSet
-from apps.audit.views import AuditLogViewSet
+from apps.audit.views import (
+    ActivityAnalysisView, ActivityFlagViewSet, ActivitySettingsView, AuditLogViewSet, SuspiciousAlertViewSet,
+)
 from apps.appointments.views import AppointmentViewSet
 from apps.notifications.views import NotificationViewSet
 
@@ -43,6 +45,8 @@ router.register(r'prescriptions', PrescriptionViewSet, basename='prescription')
 router.register(r'recommendations', RecommendationHistoryViewSet, basename='recommendation')
 router.register(r'documents', DocumentViewSet, basename='document')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
+router.register(r'activity-flags', ActivityFlagViewSet, basename='activity-flag')
+router.register(r'suspicious-alerts', SuspiciousAlertViewSet, basename='suspicious-alert')
 router.register(r'appointments', AppointmentViewSet, basename='appointment')
 router.register(r'notifications', NotificationViewSet, basename='notification')
 
@@ -65,8 +69,14 @@ urlpatterns = [
     path('api/v1/auth/admin/manage-admins/', AdminManageAdminsView.as_view(), name='admin_manage_admins'),
     path('api/v1/auth/admin/stats/', AdminDashboardStatsView.as_view(), name='admin_stats'),
 
-    # Smart symptom check (Naive Bayes + TOPSIS); the keyword checker stays at /recommendations/
+    # Smart symptom check (Random Forest + AHP-weighted TOPSIS); the keyword checker stays at /recommendations/
     path('api/v1/smart-symptom-check/', SmartSymptomCheckView.as_view(), name='smart_symptom_check'),
+    # AHP comparisons that set the doctor-ranking weights (admin only)
+    path('api/v1/ranking-settings/', RankingSettingsView.as_view(), name='ranking_settings'),
+    # Window and DBSCAN parameters for activity anomaly flagging (admin only)
+    path('api/v1/activity-settings/', ActivitySettingsView.as_view(), name='activity_settings'),
+    # Step-by-step DBSCAN analysis for the admin page (GET previews, POST saves flags)
+    path('api/v1/activity-analysis/', ActivityAnalysisView.as_view(), name='activity_analysis'),
 
     # Registered resource routes
     path('api/v1/', include(router.urls)),

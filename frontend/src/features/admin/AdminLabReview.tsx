@@ -71,7 +71,7 @@ function ReviewCard({ item }: { item: LabReviewItem }) {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Approving does not change the record: the values still have to be confirmed on the patient's report.
+          Nothing changes until the values are confirmed.
         </p>
       </CardContent>
     </Card>
@@ -83,7 +83,7 @@ export function AdminLabReview() {
   return (
     <div className="space-y-6">
       <PageHeader title="Lab report review" icon={ShieldAlert}
-        description="Reports whose patient ID could not be verified automatically. Check them against the patient before approving." />
+        description="Reports whose patient ID could not be verified. Check them before approving." />
       <DataState isLoading={isLoading} isError={isError} onRetry={() => refetch()} isEmpty={!data.length}
         skeleton={<ListSkeleton rows={2} />}
         empty={<EmptyState icon={ShieldAlert} title="Nothing to review" description="All uploaded reports have been verified." />}>

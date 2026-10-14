@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { PageHeader, DataState, EmptyState, ListSkeleton } from '@/components/patterns'
 import { auditService } from '@/lib/api'
+import { AdminActivityFlags } from './AdminActivityFlags'
 import { formatDateTime } from '@/lib/utils'
 import {
   useDebounced, tableHeadClass,
@@ -18,13 +19,14 @@ const ACTION_OPTIONS = [
     'LOGIN', 'CREATE_PATIENT', 'UPDATE_PATIENT', 'DELETE_PATIENT',
     'CREATE_DOCTOR', 'UPDATE_DOCTOR', 'DELETE_DOCTOR', 'RESET_PASSWORD',
     'UPLOAD_DOCUMENT', 'DELETE_DOCUMENT', 'CREATE_ASSIGNMENT', 'DELETE_ASSIGNMENT',
+    'REVIEW_ACTIVITY_FLAG', 'REVIEW_SUSPICIOUS_ALERT', 'RUN_ACTIVITY_ANALYSIS', 'UPDATE_ACTIVITY_SETTINGS',
   ].map((a) => ({ value: a, label: a.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) })),
 ]
 
 function actionVariant(action: string): 'danger' | 'success' | 'info' | 'neutral' {
   if (action.startsWith('DELETE')) return 'danger'
   if (action.startsWith('CREATE')) return 'success'
-  if (action.startsWith('UPDATE') || action.startsWith('UPLOAD') || action.startsWith('RESET')) return 'info'
+  if (action.startsWith('UPDATE') || action.startsWith('UPLOAD') || action.startsWith('RESET') || action.startsWith('REVIEW')) return 'info'
   return 'neutral'
 }
 
@@ -51,6 +53,8 @@ export function AdminAudit() {
         description="An append-only record of every sensitive action across the system."
         icon={ScrollText}
       />
+
+      <AdminActivityFlags />
 
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

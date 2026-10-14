@@ -12,7 +12,8 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.lab_reports.extractor import extract_medical_fields
 from apps.lab_reports.identity import extract_identity, find_name_in_text, verify_identity
-from apps.lab_reports.ocr_service import extract_text_from_bytes
+from apps.lab_reports.services import table_reader
+from apps.lab_reports.services.ocr import UnreadableFile, read_document
 from apps.patients.models import Patient
 
 
@@ -37,10 +38,14 @@ class Command(BaseCommand):
 
         with open(path, 'rb') as fh:
             raw = fh.read()
+        ext = os.path.splitext(path)[1].lower()
         try:
-            text = extract_text_from_bytes(raw, os.path.splitext(path)[1])
-        except (RuntimeError, ValueError) as exc:
+            ocr = read_document(raw, ext)
+        except UnreadableFile as exc:
             raise CommandError(f'The file could not be read: {exc}')
+        text = ocr.text
+        if not text.strip():
+            raise CommandError(f'The file could not be read: {ocr.ocr_error or "no text was found."}')
 
         out = self.stdout
         if not hide_text:
@@ -65,7 +70,23 @@ class Command(BaseCommand):
         else:
             out.write(self.style.ERROR(f'  Result              : NO MATCH: {result.reason}'))
 
-        out.write(self.style.MIGRATE_HEADING('\nValues found'))
+        table = table_reader.read_values(raw, ext, ocr)
+        source = {'text_layer': "the PDF's own text", 'ocr': f'OCR ({ocr.confidence}% mean confidence)',
+                  'mixed': f"the PDF's own text and OCR of its scanned pages ({ocr.confidence}% mean confidence)"}
+        out.write(self.style.MIGRATE_HEADING('\nResults table'))
+        out.write(f'  Read from           : {source.get(ocr.source, "nothing")}')
+        out.write(f'  Table read as       : {table.method or "no table found"}')
+        for f in table.values:
+            value = f'{f.extracted_value} → {f.suggested_value}' if f.suggested_value else f.extracted_value
+            conf = f'  [{f.ocr_confidence:.0f}%]' if f.ocr_confidence is not None and f.ocr_confidence < 100 else ''
+            out.write(f'  {f.field_name:22} {value:>14} {f.unit:12} range: {f.reference_range or "not read":20}'
+                      f' <- "{f.printed_name}"{conf}')
+            for r in f.review_reasons:
+                out.write(self.style.WARNING(f'      ! {r["message"]}'))
+        for u in table.unmatched:
+            out.write(self.style.ERROR(f'  NOT RECOGNISED: "{u["name"]}" {u["value"]} {u["unit"]} ({u["reason"]})'))
+
+        out.write(self.style.MIGRATE_HEADING('\nFree-text values (used only for tests not in the table; need confirming)'))
         fields = extract_medical_fields(text)
         if not fields:
             out.write('  none')

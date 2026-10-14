@@ -3,6 +3,7 @@ import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/lib/auth'
+import { TooltipProvider } from '@/components/ui/misc'
 
 /** Render a page at `path` with the providers the app uses. `routes` adds other pages to navigate to. */
 export function renderPage(
@@ -15,12 +16,14 @@ export function renderPage(
   return render(
     <QueryClientProvider client={client}>
       <AuthProvider>
-        <MemoryRouter initialEntries={[route]}>
-          <Routes>
-            <Route path={path} element={ui} />
-            {Object.entries(routes).map(([p, el]) => <Route key={p} path={p} element={el} />)}
-          </Routes>
-        </MemoryRouter>
+        <TooltipProvider>
+          <MemoryRouter initialEntries={[route]}>
+            <Routes>
+              <Route path={path} element={ui} />
+              {Object.entries(routes).map(([p, el]) => <Route key={p} path={p} element={el} />)}
+            </Routes>
+          </MemoryRouter>
+        </TooltipProvider>
       </AuthProvider>
     </QueryClientProvider>,
   )

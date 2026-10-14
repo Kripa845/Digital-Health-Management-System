@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { formatISODate, isISODate } from '@/lib/dates'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -26,6 +27,9 @@ export function formatBytes(bytes?: number | null) {
 /** Format an ISO date to a readable date */
 export function formatDate(value?: string | Date | null, opts?: Intl.DateTimeFormatOptions) {
   if (!value) return '—'
+  // A bare calendar date ("2026-10-12") would parse as UTC midnight and show
+  // as the previous day west of UTC.
+  if (isISODate(value)) return formatISODate(value, opts)
   const d = typeof value === 'string' ? new Date(value) : value
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, opts ?? { year: 'numeric', month: 'short', day: 'numeric' })

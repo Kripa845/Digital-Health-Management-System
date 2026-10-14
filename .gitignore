@@ -27,3 +27,19 @@ Thumbs.db
 # Playwright
 frontend/test-results/
 frontend/playwright-report/
+
+# DDXPlus source files (download separately, CC-BY) and the large generated splits
+backend/ml/data/ddxplus/
+backend/ml/data/train/
+backend/ml/data/test/
+
+.env
+*.sqlite3
+backend/media/
+backend/e2e-media/
+backend/ml/data/ddxplus/
+frontend/dist/
+.pytest_cache/
+frontend/test-results/
+__pycache__/
+backend/ml/symptom_model.joblib

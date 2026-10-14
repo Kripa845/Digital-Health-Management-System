@@ -1,8 +1,8 @@
 import type { LucideIcon } from 'lucide-react'
 import {
-  LayoutDashboard, Users, Stethoscope, CalendarDays, Sparkles,
+  LayoutDashboard, Users, Stethoscope, CalendarDays,
   ShieldCheck, ScrollText, Settings, IdCard, FileText, ScanLine,
-  UserCircle, HeartPulse, FlaskConical, ClipboardCheck, BrainCircuit,
+  UserCircle, FlaskConical, BrainCircuit, Activity, Siren,
 } from 'lucide-react'
 import type { Role } from '@/lib/types'
 
@@ -27,7 +27,6 @@ export const NAV: Record<Role, NavSection[]> = {
         { label: 'Patients', to: '/admin/patients', icon: Users },
         { label: 'Doctors', to: '/admin/doctors', icon: Stethoscope },
         { label: 'Appointments', to: '/admin/appointments', icon: CalendarDays },
-        { label: 'Recommendations', to: '/admin/recommendations', icon: Sparkles },
         { label: 'Symptom Checker', to: '/admin/symptom-checker', icon: BrainCircuit },
       ],
     },
@@ -35,8 +34,9 @@ export const NAV: Record<Role, NavSection[]> = {
       heading: 'Governance',
       items: [
         { label: 'Access Requests', to: '/admin/access-requests', icon: ShieldCheck },
-        { label: 'Lab Report Review', to: '/admin/lab-review', icon: ClipboardCheck },
         { label: 'Audit Log', to: '/admin/audit', icon: ScrollText },
+        { label: 'Activity Analysis', to: '/admin/activity-analysis', icon: Activity },
+        { label: 'Suspicious Alerts', to: '/admin/suspicious-alerts', icon: Siren },
         { label: 'Settings', to: '/admin/settings', icon: Settings },
       ],
     },
@@ -65,7 +65,6 @@ export const NAV: Record<Role, NavSection[]> = {
         { label: 'Appointments', to: '/patient/appointments', icon: CalendarDays },
         { label: 'Lab Reports', to: '/patient/lab-reports', icon: FlaskConical },
         { label: 'Documents', to: '/patient/reports', icon: FileText },
-        { label: 'Find a Doctor', to: '/patient/find-care', icon: HeartPulse },
         { label: 'Symptom Checker', to: '/patient/symptom-checker', icon: BrainCircuit },
       ],
     },

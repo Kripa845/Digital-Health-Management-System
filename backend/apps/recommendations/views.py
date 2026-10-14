@@ -1,6 +1,5 @@
 import csv
 import json
-import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,11 +9,13 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 
 from apps.recommendations.models import RecommendationHistory
+from apps.recommendations.ranking import reason as ranking_reason, score_doctors, with_ranking_data
 from apps.recommendations.serializers import RecommendationHistorySerializer
 from apps.doctors.models import Doctor
 from apps.doctors.serializers import PublicDoctorSerializer
 from apps.patients.models import Patient
 from apps.audit.utils import log_activity
+from ml.negation import find_symptoms
 
 
 _DATA_DIR = Path(__file__).resolve().parent / 'data'
@@ -43,25 +44,16 @@ def _load_symptom_severity():
     return severity
 
 
-_NEGATION_RE = re.compile(r"\b(?:no|not|without|denies|denied|never|none)\b(?:\W+\w+){0,2}\W*$")
-
-
-@lru_cache(maxsize=None)
-def _keyword_re(keyword: str) -> re.Pattern:
-    return re.compile(rf"(?<![a-z0-9]){re.escape(keyword.lower())}(?![a-z0-9])")
-
-
+@lru_cache(maxsize=4096)
 def mentions(keyword: str, text: str) -> bool:
-    """True when ``keyword`` appears as a whole word and is not negated.
+    """True when ``keyword`` appears as whole words and is never negated.
 
     "bp" does not match inside "subpar", "ear" does not match "heart", and
-    "no chest pain" does not count as chest pain.
+    "no chest pain" / "I don't have chest pain" do not count as chest pain.
+    Uses the same negation rules as the smart checker (ml/negation.py).
     """
-    for m in _keyword_re(keyword).finditer(text or ''):
-        before = text[max(0, m.start() - 40):m.start()]
-        if not _NEGATION_RE.search(before):
-            return True
-    return False
+    present, _absent = find_symptoms(text or '', [keyword])
+    return bool(present)
 
 
 DEPARTMENT_RULES, DEPARTMENT_EQUIVALENCES = _load_department_map()
@@ -130,48 +122,27 @@ def age_fit(department: str, age) -> tuple:
     return 6.0, None
 
 
-def score_doctor(doctor, ctx) -> tuple:
+def doctor_reasons(row: dict, rows: list[dict], ctx) -> list[str]:
+    """Plain-language reasons for a doctor's place in the ranking (the score itself is TOPSIS)."""
+    doctor = row['doctor']
     reasons = []
-    score = 0.0
-
-    dept_raw = ctx['dept_scores'].get(doctor.department, 0)
-    if ctx['top_dept_score'] > 0:
-        match_pts = 50.0 * dept_raw / ctx['top_dept_score']
-    else:
-        match_pts = 0.0
-    score += match_pts
-    if dept_raw > 0:
+    if ctx['dept_scores'].get(doctor.department, 0) > 0:
         reasons.append(f"symptoms match {doctor.department}")
-
     history_lower = ctx['history_lower']
-    if history_lower:
-        dept_keywords = DEPARTMENT_RULES.get(doctor.department, {})
-        if any(mentions(kw, history_lower) for kw in dept_keywords):
-            score += 15.0
-            reasons.append(f"medical history relates to {doctor.department}")
-
-    age_pts, age_reason = age_fit(doctor.department, ctx['age'])
-    score += age_pts
+    if history_lower and any(mentions(kw, history_lower) for kw in DEPARTMENT_RULES.get(doctor.department, {})):
+        reasons.append(f"medical history relates to {doctor.department}")
+    _, age_reason = age_fit(doctor.department, ctx['age'])
     if age_reason:
         reasons.append(age_reason)
-
-    pain = ctx['pain_level'] or 0
-    if dept_raw > 0:
-        pain_pts = 10.0 * pain / 10.0
-        score += pain_pts
-        if pain >= 8:
-            reasons.append(f"high pain level ({pain}/10) prioritised")
-
+    if (ctx['pain_level'] or 0) >= 8 and ctx['dept_scores'].get(doctor.department, 0) > 0:
+        reasons.append(f"high pain level ({ctx['pain_level']}/10) prioritised")
     if is_doctor_available(doctor):
-        score += 5.0
         reasons.append("available today")
-
-    active_load = doctor.assignments.filter(status='Active').count()
-    score += 5.0 / (1 + active_load)
-    if active_load == 0:
+    if len(rows) > 1:
+        reasons.append(ranking_reason(row, rows))
+    elif row['caseload'] == 0:
         reasons.append("no current caseload")
-
-    return round(score, 2), reasons
+    return reasons
 
 
 def build_recommendation(symptoms, pain_level, age, medical_history):
@@ -192,15 +163,18 @@ def build_recommendation(symptoms, pain_level, age, medical_history):
     for d in get_equivalenced_depts(symptoms, primary_dept):
         if d not in candidate_depts:
             candidate_depts.append(d)
-    candidates = list(Doctor.objects.filter(department__in=candidate_depts, status='Active'))
-
+    active = with_ranking_data(Doctor.objects.filter(status='Active'))
+    candidates = list(active.filter(department__in=candidate_depts))
     if not candidates:
-        candidates = list(Doctor.objects.filter(department='General Medicine', status='Active'))
+        candidates = list(active.filter(department='General Medicine'))
     if not candidates:
-        candidates = list(Doctor.objects.filter(status='Active'))
+        candidates = list(active)
 
-    scored = [(d, *score_doctor(d, ctx)) for d in candidates]
-    scored.sort(key=lambda t: (t[1], -t[0].assignments.filter(status='Active').count()), reverse=True)
+    # Specialisation match: each department's keyword score against the best one (1.0).
+    top = ctx['top_dept_score']
+    match = {d: score / top for d, score in dept_scores.items()} if top > 0 else {}
+    rows = score_doctors(candidates, match)
+    scored = [(r['doctor'], r['score'], doctor_reasons(r, rows, ctx)) for r in rows]
 
     escalate = (pain_level or 0) >= 8 or severity >= 70
     limit = 2 if escalate else 3
@@ -265,13 +239,6 @@ def get_equivalenced_depts(symptoms: str, primary_dept: str) -> list:
                 if d not in depts:
                     depts.append(d)
     return depts
-
-
-def rank_doctors(qs) -> list:
-    return sorted(
-        qs,
-        key=lambda d: (d.assignments.filter(status='Active').count(), d.user.first_name.lower()),
-    )
 
 
 class RecommendationHistoryViewSet(viewsets.ModelViewSet):

@@ -10,8 +10,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from apps.lab_reports.extractor import ExtractedField, extract_medical_fields
+from apps.lab_reports.extractor import ExtractedField, extract_medical_fields, normalize_ocr_text
 from apps.lab_reports.identity import ReportIdentity, extract_identity
+from apps.lab_reports.services.review import details_after_value
 
 # The values the feature reports on explicitly (always present in the
 # extracted JSON, as null when missing).
@@ -61,6 +62,10 @@ class ExtractedReport:
     report_date_source: str = ''      # 'reporting', 'collection' or '' (none found)
     values: list[ExtractedField] = field(default_factory=list)
     identity: ReportIdentity | None = field(default=None, repr=False)
+    # Set by services/table_reader.merge_into: table rows whose test name is not recognised
+    # (shown on the review screen, never saved) and how the table was read.
+    unmatched_rows: list[dict] = field(default_factory=list)
+    table_method: str = ''
 
     def value_of(self, test: str) -> ExtractedField | None:
         return next((v for v in self.values if v.patient_field == test), None)
@@ -84,6 +89,8 @@ class ExtractedReport:
                 v.patient_field: {'value': v.extracted_value, 'unit': v.unit}
                 for v in self.values if v.patient_field not in CORE_TESTS and v.patient_field != 'blood_group'
             },
+            'unmatched_rows': self.unmatched_rows,
+            'table_method': self.table_method,
         }
 
 
@@ -137,10 +144,47 @@ def find_patient_ids(text: str) -> tuple[list[str], list[str]]:
     return list(dict.fromkeys(c for c in card if c)), list(dict.fromkeys(other))
 
 
+def _source_after(lines: list[str], ef: ExtractedField) -> str | None:
+    """The text after a value on the line it was read from (None when it cannot be found)."""
+    value = ef.extracted_value
+    token = re.compile(rf'(?<![\d.]){re.escape(value)}(?![\d.]|\s*/\s*\d)')
+    label = (ef.raw_match or '').strip().split('\n', 1)[0].strip().lower()
+    for i, line in enumerate(lines):
+        at = line.lower().find(label) if label else -1
+        if at < 0:
+            continue
+        m = token.search(line, at)
+        if m:
+            return line[m.end():]
+        if i + 1 < len(lines):                               # the value printed under its label
+            m = token.match(lines[i + 1].strip())
+            if m:
+                return lines[i + 1].strip()[m.end():]
+    found = [line[m.end():] for line in lines for m in [token.search(line)] if m]
+    return found[0] if len(found) == 1 else None
+
+
+def attach_printed_details(text: str, values: list[ExtractedField]) -> None:
+    """Fill in each value's unit (when missing) and the reference range printed beside it."""
+    lines = normalize_ocr_text(text).split('\n')
+    for ef in values:
+        if ef.patient_field in ('blood_group', 'blood_pressure'):
+            continue
+        after = _source_after(lines, ef)
+        if after is None:
+            continue
+        unit, ref = details_after_value(after)
+        if not ef.unit and unit:
+            ef.unit = unit
+        if ref is not None and not ef.reference_range:
+            ef.reference_range = ref.text[:100]
+
+
 def extract_report(text: str, today: date | None = None) -> ExtractedReport:
     identity = extract_identity(text, today)
     card_ids, other_ids = find_patient_ids(text)
     values = extract_medical_fields(text)
+    attach_printed_details(text, values)
     blood = next((v.extracted_value for v in values if v.patient_field == 'blood_group'), None)
     return ExtractedReport(
         card_ids=card_ids,

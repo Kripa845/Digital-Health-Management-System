@@ -140,7 +140,8 @@ class LabReportViewSet(viewsets.ModelViewSet):
                 save_without_values(report, user=request.user, request=request)
             else:
                 apply_report(report, user=request.user, edits=payload.validated_data['values'],
-                             accept_flagged=payload.validated_data['accept_flagged'], request=request)
+                             accept_flagged=payload.validated_data['accept_flagged'],
+                             confirmed=payload.validated_data['confirmed'], request=request)
         except NotPending:
             message = ('This report is waiting for review by the care team.'
                        if report.status == LabReport.Status.NEEDS_REVIEW

@@ -2,6 +2,9 @@
 pytesseract==0.3.13
 # PDF text layer and page images (no Poppler needed)
 pymupdf==1.28.2
+# Results tables from a PDF's text layer (word positions, ruled tables)
+pdfplumber==0.11.10
+opencv-python-headless==4.14.0.94
 # Optional AI fallback for scanned reports (LAB_LLM_FALLBACK, off by default)
 anthropic==1.11.0
 asgiref==3.12.1
@@ -32,7 +35,7 @@ whitenoise==6.12.0
 cryptography==50.0.2
 rapidfuzz==3.14.6
 python-magic==0.4.27
-# Smart symptom check (ml/): Naive Bayes model, TOPSIS ranking, training/evaluation charts
+# Smart symptom check (ml/): Random Forest model, TOPSIS ranking, training/evaluation charts
 scikit-learn==1.8.0
 pandas==2.2.3
 numpy==2.2.1

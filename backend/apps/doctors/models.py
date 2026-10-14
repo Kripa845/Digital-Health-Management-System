@@ -42,6 +42,8 @@ class Doctor(models.Model):
         ],
     )
     specialization = models.CharField(max_length=100)
+    # Years in practice; a benefit criterion when the symptom checker ranks doctors (TOPSIS).
+    experience_years = models.PositiveIntegerField(default=0)
     dob    = models.DateField()
     gender = models.CharField(
         max_length=10,
@@ -78,18 +80,112 @@ class Doctor(models.Model):
                 return candidate
         return _generate_doctor_id()
 
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        instance._loaded_schedule = instance.__dict__.get('availability_schedule')
+        return instance
+
     def save(self, *args, **kwargs):
         if not self.doctor_id:
             self.doctor_id = self.__class__.generate_doctor_id()
         if not self.uuid_token:
             self.uuid_token = uuid.uuid4()
+        schedule_changed = (
+            self._state.adding
+            or self.availability_schedule != getattr(self, '_loaded_schedule', self.availability_schedule)
+        )
         super().save(*args, **kwargs)
+        # The JSON summary is what admin forms, ranking and seed data write;
+        # keep the bookable weekly schedule rows in step with it.
+        if schedule_changed:
+            self.sync_schedules_from_json()
+        self._loaded_schedule = self.availability_schedule
+
+    def sync_schedules_from_json(self):
+        """Mirror ``availability_schedule`` ({'Monday': '09:00-17:00', ...}) into
+        DoctorSchedule rows. A weekday that is missing, 'closed' or unreadable
+        deactivates its row; slot lengths are kept."""
+        from apps.doctors.scheduling import parse_window
+
+        schedule = self.availability_schedule if isinstance(self.availability_schedule, dict) else {}
+        existing = {row.weekday: row for row in self.schedules.all()}
+        for weekday, name in enumerate(WEEKDAY_NAMES):
+            window = parse_window(schedule.get(name))
+            row = existing.get(weekday)
+            if window:
+                if row is None:
+                    DoctorSchedule.objects.create(
+                        doctor=self, weekday=weekday, start_time=window[0], end_time=window[1],
+                    )
+                elif (row.start_time, row.end_time, row.is_active) != (*window, True):
+                    row.start_time, row.end_time, row.is_active = *window, True
+                    row.save(update_fields=['start_time', 'end_time', 'is_active'])
+            elif row is not None and row.is_active:
+                row.is_active = False
+                row.save(update_fields=['is_active'])
+
+    def sync_json_from_schedules(self):
+        """Rewrite ``availability_schedule`` from the DoctorSchedule rows (used
+        after the rows are edited directly, e.g. in the Django admin)."""
+        schedule = {}
+        for row in self.schedules.all():
+            schedule[WEEKDAY_NAMES[row.weekday]] = (
+                f"{row.start_time:%H:%M}-{row.end_time:%H:%M}" if row.is_active else 'closed'
+            )
+        if schedule != self.availability_schedule:
+            self.availability_schedule = schedule
+            self.save(update_fields=['availability_schedule'])
 
     def __str__(self):
         return (
             f"{self.doctor_id} - Dr. {self.user.first_name} {self.user.last_name}"
             f" ({self.department})"
         )
+
+
+WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+
+class DoctorSchedule(models.Model):
+    """One bookable window per doctor and weekday, cut into slots of ``slot_minutes``."""
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='schedules')
+    weekday = models.PositiveSmallIntegerField(
+        choices=[(i, name) for i, name in enumerate(WEEKDAY_NAMES)],
+        help_text='0 = Monday … 6 = Sunday',
+    )
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    slot_minutes = models.PositiveSmallIntegerField(default=30)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['doctor', 'weekday']
+        constraints = [
+            models.UniqueConstraint(fields=['doctor', 'weekday'], name='unique_doctor_weekday_schedule'),
+            models.CheckConstraint(condition=models.Q(end_time__gt=models.F('start_time')),
+                                   name='schedule_end_after_start'),
+            models.CheckConstraint(condition=models.Q(slot_minutes__gte=5), name='schedule_slot_min_5'),
+        ]
+
+    def __str__(self):
+        return f"{self.doctor.doctor_id} {self.get_weekday_display()} {self.start_time:%H:%M}-{self.end_time:%H:%M}"
+
+
+class DoctorLeave(models.Model):
+    """A whole day the doctor does not see patients, whatever the weekly schedule says."""
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='leaves')
+    date = models.DateField()
+    reason = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ['date']
+        constraints = [
+            models.UniqueConstraint(fields=['doctor', 'date'], name='unique_doctor_leave_day'),
+        ]
+
+    def __str__(self):
+        return f"{self.doctor.doctor_id} on leave {self.date}"
 
 
 class DoctorAssignment(models.Model):

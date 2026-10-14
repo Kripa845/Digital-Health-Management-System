@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input, Textarea } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/input'
 import { Field } from '@/components/ui/label'
 import { SimpleSelect } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -16,11 +16,15 @@ import { AppointmentStatusBadge } from '@/components/status-badge'
 import { appointmentService, doctorService } from '@/lib/api'
 import { formatDate, formatTime } from '@/lib/utils'
 import type { Appointment } from '@/lib/types'
+import { AvailableDatePicker } from './AvailableDatePicker'
 
 const UPCOMING: Appointment['status'][] = ['PENDING', 'ACCEPTED']
 const CANCELLABLE: Appointment['status'][] = ['PENDING', 'ACCEPTED']
 
-const todayISO = () => new Date().toISOString().split('T')[0]
+/** The slot was taken by someone else between loading the times and booking. */
+function isSlotTaken(err: any) {
+  return err?.response?.status === 409 || err?.response?.data?.code === 'slot_taken'
+}
 
 function BookDialog() {
   const qc = useQueryClient()
@@ -36,6 +40,20 @@ function BookDialog() {
     enabled: open,
   })
 
+  const datesQ = useQuery({
+    queryKey: ['doctor-availability', doctor, 'dates'],
+    queryFn: () => doctorService.availableDates(doctor),
+    enabled: open && !!doctor,
+    staleTime: 0,
+  })
+
+  const slotsQ = useQuery({
+    queryKey: ['doctor-availability', doctor, 'slots', date],
+    queryFn: () => doctorService.availableSlots(doctor, date),
+    enabled: open && !!doctor && !!date,
+    staleTime: 0,
+  })
+
   const doctorOptions = useMemo(
     () =>
       (doctorsQ.data ?? []).map((d) => ({
@@ -44,6 +62,17 @@ function BookDialog() {
       })),
     [doctorsQ.data],
   )
+
+  const availableDates = datesQ.data?.dates ?? []
+  const slots = slotsQ.data?.slots ?? []
+
+  function chooseDoctor(value: string) {
+    setDoctor(value); setDate(''); setTime('')
+  }
+
+  function chooseDate(value: string) {
+    setDate(value); setTime('')
+  }
 
   function reset() {
     setDoctor(''); setDate(''); setTime(''); setReason('')
@@ -60,11 +89,19 @@ function BookDialog() {
     onSuccess: () => {
       toast.success('Appointment requested — awaiting confirmation.')
       qc.invalidateQueries({ queryKey: ['patient', 'appointments', 'mine'] })
+      qc.invalidateQueries({ queryKey: ['doctor-availability'] })
       reset()
       setOpen(false)
     },
     onError: (err: any) => {
       const data = err?.response?.data
+      if (isSlotTaken(err)) {
+        // Someone else got there first: drop the choice and reload what is left.
+        setTime('')
+        qc.invalidateQueries({ queryKey: ['doctor-availability', doctor] })
+        toast.error(data?.detail || 'That time was just booked. Please choose another time.')
+        return
+      }
       const msg =
         typeof data === 'string' ? data
           : data?.non_field_errors?.[0] || data?.detail
@@ -90,26 +127,77 @@ function BookDialog() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Book an appointment</DialogTitle>
-          <DialogDescription>Choose a doctor and a preferred time. Your care team will confirm the request.</DialogDescription>
+          <DialogDescription>
+            Choose a doctor and an open time (Nepal time).
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
           <Field label="Doctor" htmlFor="appt-doctor" required hint={doctorsQ.isLoading ? 'Loading doctors…' : undefined}>
             <SimpleSelect
               id="appt-doctor"
               value={doctor}
-              onValueChange={setDoctor}
+              onValueChange={chooseDoctor}
               options={doctorOptions}
               placeholder={doctorsQ.isLoading ? 'Loading…' : 'Select a doctor'}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-4">
+
+          {doctor && (
             <Field label="Date" htmlFor="appt-date" required>
-              <Input id="appt-date" type="date" min={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} />
+              {datesQ.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading the doctor’s schedule…</p>
+              ) : datesQ.isError || !datesQ.data ? (
+                <p className="text-sm text-danger">
+                  Could not load the schedule.{' '}
+                  <button type="button" className="underline" onClick={() => datesQ.refetch()}>Try again</button>
+                </p>
+              ) : availableDates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  This doctor has no open appointments in the next {datesQ.data.days} days.
+                </p>
+              ) : (
+                <AvailableDatePicker
+                  id="appt-date"
+                  today={datesQ.data.today}
+                  days={datesQ.data.days}
+                  available={availableDates}
+                  value={date}
+                  onChange={chooseDate}
+                />
+              )}
             </Field>
-            <Field label="Time" htmlFor="appt-time" required>
-              <Input id="appt-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          )}
+
+          {doctor && date && (
+            <Field label={`Time on ${formatDate(date, { weekday: 'short', month: 'short', day: 'numeric' })}`} htmlFor="appt-time" required>
+              {slotsQ.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading open times…</p>
+              ) : slotsQ.isError ? (
+                <p className="text-sm text-danger">
+                  Could not load times.{' '}
+                  <button type="button" className="underline" onClick={() => slotsQ.refetch()}>Try again</button>
+                </p>
+              ) : slots.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No open times left on this day. Please pick another date.</p>
+              ) : (
+                <div id="appt-time" role="group" aria-label="Available times" className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {slots.map((s) => (
+                    <Button
+                      key={s}
+                      type="button"
+                      size="sm"
+                      variant={s === time ? 'primary' : 'outline'}
+                      aria-pressed={s === time}
+                      onClick={() => setTime(s)}
+                    >
+                      {formatTime(s)}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </Field>
-          </div>
+          )}
+
           <Field label="Reason" htmlFor="appt-reason" hint="Optional — a short note about your visit.">
             <Textarea id="appt-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. persistent cough for two weeks…" />
           </Field>
@@ -117,7 +205,7 @@ function BookDialog() {
             <DialogClose asChild>
               <Button type="button" variant="secondary">Cancel</Button>
             </DialogClose>
-            <Button type="submit" loading={createM.isPending}>Request appointment</Button>
+            <Button type="submit" loading={createM.isPending} disabled={!time}>Request appointment</Button>
           </DialogFooter>
         </form>
       </DialogContent>

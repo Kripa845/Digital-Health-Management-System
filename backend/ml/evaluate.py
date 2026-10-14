@@ -1,12 +1,15 @@
-"""Evaluate the smart symptom check and compare it with the old keyword scorer.
+"""Evaluate the smart symptom check on the DDXPlus TEST split and write ml/RESULTS.md.
 
-Run from backend/:   python -m ml.evaluate      (after python -m ml.train_nb)
+Run from backend/:   python -m ml.evaluate      (after ml.ddxplus_adapter for both splits and ml.train_model)
 
-1. Naive Bayes metrics on the held-out test set.
-2. Department accuracy: old keyword scorer vs the new method, on cases written
-   as text from held-out rows, plus cases with a negated misleading symptom.
-3. Negation unit-test pass rate.
-4. Everything is written to ml/RESULTS.md.
+1. The model on ml/data/test/ddxplus_binary.csv (never on training rows): accuracy,
+   top-3 accuracy, macro F1 and department accuracy, also on test rows whose exact
+   symptom pattern does not occur in the training split.
+2. The whole text pipeline on short descriptions written from test rows (3 symptoms
+   each, as a user would type them): statuses, department accuracy, and the old keyword
+   scorer for comparison.
+3. Negation unit-test pass rate.  4. TOPSIS weight sensitivity (unchanged worked example).
+DDXPlus is SYNTHETIC: these figures say how well the model fits the generator, not real patients.
 """
 from __future__ import annotations
 
@@ -23,101 +26,73 @@ django.setup()
 import joblib  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score  # noqa: E402
+from sklearn.metrics import accuracy_score, f1_score  # noqa: E402
 
-from apps.recommendations.views import match_department, score_departments  # noqa: E402  (old keyword scorer)
+from apps.recommendations.views import match_department  # noqa: E402  (old keyword scorer)
 from ml import symptom_model, test_negation  # noqa: E402
 from ml.disease_dept import UNCERTAIN, department_for  # noqa: E402
-from ml.negation import _words  # noqa: E402
+from ml.schema import get as get_schema  # noqa: E402
 from ml.sensitivity import BENEFIT as SENS_BENEFIT, MATRIX as SENS_MATRIX, WEIGHT_SETS  # noqa: E402
 from ml.topsis import topsis  # noqa: E402
+from ml.ddxplus_adapter import PAIN_LOCATION  # noqa: E402
+from ml.train_model import N_ESTIMATORS, PAIN, TARGET, TRAIN_PATH  # noqa: E402
 
 ML_DIR = Path(__file__).resolve().parent
 RESULTS = ML_DIR / 'RESULTS.md'
-TRAINING_RESULTS = ML_DIR / 'TRAINING_RESULTS.md'
-N_STANDARD = 50
-N_NEGATION = 12
+TEST_PATH = ML_DIR / 'data' / 'test' / 'ddxplus_binary.csv'
+N_TEXT_CASES = 300
+SYMPTOMS_PER_TEXT = 3
 SEED = 42
 
 
 def as_text(symptoms: list[str]) -> str:
-    """['fever', 'cough', 'headache'] → 'fever, cough and headache'."""
+    """['fever', 'cough', 'sore throat'] → 'fever, cough and sore throat'."""
     if len(symptoms) == 1:
         return symptoms[0]
     return ', '.join(symptoms[:-1]) + ' and ' + symptoms[-1]
 
 
-def mentioned_ignoring_negation(text: str, columns: list[str]) -> list[str]:
-    """Every symptom mentioned, negated or not (for the 'no negation detection' comparison)."""
-    words = _words(text)
-    found = []
-    for s in columns:
-        target = _words(s)
-        n = len(target)
-        if any(words[i:i + n] == target for i in range(len(words) - n + 1)):
-            found.append(s)
-    return found
+def model_metrics(model, X, y) -> dict:
+    proba = model.predict_proba(X)
+    order = np.argsort(-proba, axis=1)
+    classes = model.classes_
+    pred = classes[order[:, 0]]
+    top3 = np.array([y.iloc[i] in classes[order[i, :3]] for i in range(len(y))])
+    dept_true = y.map(department_for).to_numpy()
+    dept_pred = np.array([department_for(p) for p in pred])
+    return {'rows': len(y), 'accuracy': accuracy_score(y, pred), 'top3': top3.mean(),
+            'macro_f1': f1_score(y, pred, average='macro', zero_division=0),
+            'dept_accuracy': (dept_true == dept_pred).mean(), 'pred': pred}
 
 
-def nb_department(present: list[str], model, columns) -> str | None:
-    if len(present) < symptom_model.MIN_SYMPTOMS:
-        return None
-    x = pd.DataFrame([[1 if c in present else 0 for c in columns]], columns=columns)
-    depts = symptom_model.department_probabilities(model.classes_, model.predict_proba(x)[0])
-    best = max(depts, key=depts.get)
-    return best if depts[best] >= symptom_model.MIN_DEPARTMENT_PROBABILITY else None
+def text_cases(test: pd.DataFrame, schema) -> list[dict]:
+    """Short descriptions from random test rows: 3 of the row's yes/no symptoms, by label."""
+    # Yes/no symptoms, including pain regions ("headache"); bare "pain" is left out when the row
+    # has a region, since people type "headache", not "pain and headache".
+    askable = [s.name for s in schema.symptoms if s.data_type == 'B' and not s.antecedent]
+    regions = [s.name for s in schema.symptoms if s.parent == PAIN_LOCATION]
 
+    def typed(i):
+        present = [c for c in askable if test.iloc[i][c] == 1]
+        return [c for c in present if c != PAIN] if set(present) & set(regions) else present
 
-def build_cases(X_test, y_test, columns):
-    rows = sorted(
-        ((y, [c for c in columns if X_test.iloc[i][c] == 1]) for i, y in enumerate(y_test)),
-        key=lambda r: (r[0], r[1]))
-    standard = [{'type': 'standard', 'text': as_text(sym), 'disease': y, 'correct': department_for(y)}
-                for y, sym in rows[:N_STANDARD]]
-
-    # Negation cases: two real symptoms, plus three symptoms typical of ONE illness in
-    # another department, all negated ("no a, no b, no c, but x and y").
     rng = random.Random(SEED)
-    by_disease = {}
-    for y, sym in rows:
-        by_disease.setdefault(y, set()).update(sym)
-    negation = []
-    for y, sym in rng.sample([r for r in rows if len(r[1]) >= 2], N_NEGATION):
-        dept = department_for(y)
-        own = by_disease[y]
-        other = rng.choice(sorted(d for d in by_disease if department_for(d) != dept
-                                  and len(by_disease[d] - own) >= 3))
-        distractors = rng.sample(sorted(by_disease[other] - own), 3)
-        real = rng.sample(sym, 2)
-        negated = ', '.join(f'no {d}' for d in distractors)
-        negation.append({'type': 'negation', 'text': f'{negated}, but {as_text(real)}',
-                         'disease': y, 'correct': dept, 'distractor_disease': other})
-    return standard, negation
-
-
-def evaluate_cases(cases, model, columns):
+    rows = [i for i in range(len(test)) if len(typed(i)) >= SYMPTOMS_PER_TEXT]
+    cases = []
+    for i in rng.sample(rows, min(N_TEXT_CASES, len(rows))):
+        present = typed(i)
+        chosen = rng.sample(present, SYMPTOMS_PER_TEXT)
+        illness = test.iloc[i][TARGET]
+        cases.append({'text': as_text([schema.label(c) for c in chosen]), 'illness': illness,
+                      'correct': department_for(illness)})
     for c in cases:
-        c['old'] = match_department(c['text'])
         r = symptom_model.predict(c['text'])
-        c['new_status'] = r['status']
-        c['new_nb'] = r.get('department')                       # None when not "ok"
-        c['new_system'] = c['new_nb'] or c['old']               # as shipped: fallback to the keyword scorer
-        c['no_negation'] = nb_department(mentioned_ignoring_negation(c['text'], columns), model, columns)
+        c['status'] = r['status']
+        c['new'] = r.get('department') if r['status'] in ('ok', 'emergency') else None
+        c['top3'] = c['illness'] in [i['name'] for i in r.get('illnesses', [])]
+        c['old'] = match_department(c['text'])
+        c['shipped'] = c['new'] or c['old']                     # non-ok → keyword fallback
     return cases
-
-
-def accuracy_rows(cases):
-    methods = [
-        ('Old keyword scorer', 'old'),
-        ('New: Naive Bayes only (non-ok counted as wrong)', 'new_nb'),
-        ('New system as shipped (non-ok → keyword fallback)', 'new_system'),
-        ('Naive Bayes WITHOUT negation detection', 'no_negation'),
-    ]
-    out = []
-    for label, key in methods:
-        correct = sum(c[key] == c['correct'] for c in cases)
-        out.append((label, correct, len(cases), correct / len(cases) if cases else 0.0))
-    return out
 
 
 def table(rows, header):
@@ -126,145 +101,152 @@ def table(rows, header):
     return '\n'.join(lines)
 
 
+def spread(counts: pd.Series) -> str:
+    return f'{counts.min()} / {int(counts.median())} / {counts.max()}'
+
+
 def main():
     if not symptom_model.load():
-        raise SystemExit('ml/nb_model.joblib is missing: run python -m ml.train_nb first.')
-    model, columns = joblib.load(symptom_model.MODEL_PATH)
-    X_test, y_test, _ = joblib.load(ML_DIR / 'test_set.joblib')
+        raise SystemExit('ml/symptom_model.joblib is missing: run python -m ml.train_model first.')
+    artifact = joblib.load(symptom_model.MODEL_PATH)
+    model, columns = artifact['model'], artifact['symptoms']
+    schema = get_schema()
+    train = pd.read_csv(TRAIN_PATH)
+    test = pd.read_csv(TEST_PATH)
+    if list(test.columns) != columns + [TARGET]:
+        raise SystemExit('The test split does not follow the schema: rerun ml.ddxplus_adapter with the same flags.')
 
-    # 1. Naive Bayes on the held-out set.
-    y_pred = model.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred, average='macro', zero_division=0)
-    labels = sorted(set(y_test) | set(y_pred))
-    cm = confusion_matrix(y_test, y_pred, labels=labels)
-    errors = [(labels[i], labels[j], int(cm[i, j])) for i in range(len(labels)) for j in range(len(labels))
-              if i != j and cm[i, j]]
-    print(f'1. Naive Bayes on {len(y_test)} held-out rows: accuracy {acc:.4f}, macro F1 {f1:.4f}')
-    for t, p, n in errors:
-        print(f'   misclassified: {t} -> {p} ({n})')
+    # 1. The model on the test split.
+    X, y = test[columns], test[TARGET]
+    full = model_metrics(model, X, y)
+    seen = pd.util.hash_pandas_object(test, index=False).isin(pd.util.hash_pandas_object(train, index=False)).to_numpy()
+    unseen = model_metrics(model, X[~seen], y[~seen])
+    print(f'1. Random Forest on {full["rows"]} test rows: accuracy {full["accuracy"]:.4f}, '
+          f'top-3 {full["top3"]:.4f}, macro F1 {full["macro_f1"]:.4f}, department {full["dept_accuracy"]:.4f}')
+    print(f'   {seen.sum()} test rows also occur in the training split; on the {unseen["rows"]} unseen rows: '
+          f'accuracy {unseen["accuracy"]:.4f}, top-3 {unseen["top3"]:.4f}')
+    per_class = (pd.DataFrame({'y': y, 'ok': full['pred'] == y}).groupby('y')['ok'].agg(['mean', 'size'])
+                 .sort_values('mean'))
 
-    # 2. Department comparison.
-    standard, negation = build_cases(X_test, y_test, columns)
-    evaluate_cases(standard + negation, model, columns)
-    print(f'\n2. Department accuracy ({len(standard)} standard + {len(negation)} negation cases)')
-    sections = {}
-    for name, cases in (('Standard cases', standard), ('Negation cases', negation), ('All cases', standard + negation)):
-        rows = accuracy_rows(cases)
-        sections[name] = rows
-        print(f'   {name}:')
-        for label, correct, total, a in rows:
-            print(f'     {label.replace("→", "->"):55} {correct:>3}/{total:<3} {a:6.1%}')
-    statuses = Counter(c['new_status'] for c in standard + negation)
-    print(f'   New method statuses: {dict(statuses)}')
+    # 2. Text pipeline.
+    cases = text_cases(test, schema)
+    statuses = Counter(c['status'] for c in cases)
+    n = len(cases)
+    acc = {k: sum(c[k] == c['correct'] for c in cases) for k in ('new', 'shipped', 'old')}
+    ok_cases = [c for c in cases if c['status'] == 'ok']
+    ok_acc = sum(c['new'] == c['correct'] for c in ok_cases) / len(ok_cases) if ok_cases else 0.0
+    ok_top3 = sum(c['top3'] for c in ok_cases) / len(ok_cases) if ok_cases else 0.0
+    print(f'2. Text pipeline on {n} three-symptom descriptions: statuses {dict(statuses)}')
+    print(f'   department: smart only {acc["new"]}/{n}, as shipped {acc["shipped"]}/{n}, keyword {acc["old"]}/{n}; '
+          f'"ok" results {ok_acc:.1%} department, {ok_top3:.1%} illness in top 3')
 
     # 3. Negation tests.
-    neg_passed, neg_total, neg_failures = test_negation.run()
-    print(f'\n3. Negation tests: {neg_passed} of {neg_total} passed')
+    neg_passed, neg_total, _ = test_negation.run()
+    print(f'3. Negation tests: {neg_passed} of {neg_total} passed')
 
-    # TOPSIS sensitivity (for the report).
+    # 4. TOPSIS sensitivity (worked example, unchanged).
     sens_rows = []
     for label, weights in WEIGHT_SETS.items():
         scores = topsis(SENS_MATRIX, weights, SENS_BENEFIT)
         ranking = ' > '.join('ABC'[i] for i in np.argsort(-scores, kind='stable'))
         sens_rows.append((label, *(f'{s:.3f}' for s in scores), ranking))
 
-    # 4. RESULTS.md
-    every = standard + negation
-    old_correct = sum(c['old'] == c['correct'] for c in every)
-    old_default_hits = sum(c['old'] == c['correct'] == 'General Medicine'
-                           and not score_departments(c['text'])
-                           for c in every)
-    neg_rows = sections['Negation cases']
-    training =TRAINING_RESULTS.read_text(encoding='utf-8') if TRAINING_RESULTS.exists() else ''
-    training_body = training.split('\n', 1)[1].strip() if training else '_Run python -m ml.train_nb._'
-    case_rows = [(i + 1, c['type'], c['text'], c['disease'], c['correct'], c['old'],
-                  c['new_nb'] or f"({c['new_status']})", c['new_system'],
-                  '✓' if c['new_system'] == c['correct'] else '✗')
-                 for i, c in enumerate(standard + negation)]
+    train_counts, test_counts = train[TARGET].value_counts(), test[TARGET].value_counts()
+    worst = per_class.head(8)
     RESULTS.write_text(f"""# Smart symptom check — evaluation results
 
-Generated by `python -m ml.evaluate`. Pipeline: symptom text → rule-based negation detection →
-Bernoulli Naive Bayes (41 illnesses) → department (sum of illness probabilities) → TOPSIS ranking
-of doctors. **The output is a suggestion only, not a medical diagnosis.**
+Generated by `python -m ml.evaluate`. Model: `RandomForestClassifier` ({N_ESTIMATORS} trees),
+{len(columns)} symptom columns, {len(artifact['classes'])} illnesses.
 
-> **Important caveat.** The Kaggle dataset used here is very clean and synthetic-looking: 4,920 rows
-> collapse to 304 unique ones, and each illness has a small, fixed set of symptoms. Accuracy on it is
-> therefore unrealistically high and **does not reflect real-world performance**, where patients describe
-> symptoms in their own words, mention unrelated complaints, and have illnesses outside these 41.
+> **The data is synthetic.** Symptoms and illnesses come from DDXPlus (Fansi Tchango et al.,
+> NeurIPS 2022, CC-BY), a dataset of *simulated* patients generated from a medical knowledge base.
+> These figures say how well the model reproduces that generator. They are **not** evidence of
+> accuracy on real patients, and the tool must not be used for diagnosis.
 
-## 1. Naive Bayes on the held-out test set
+## 1. Model on the DDXPlus test split
 
-| Metric | Value |
-| --- | --- |
-| Test rows (deduplicated data, 20 % stratified split) | {len(y_test)} |
-| Accuracy | {acc:.4f} |
-| Macro F1 | {f1:.4f} |
+Evaluated on `ml/data/test/ddxplus_binary.csv` (from `release_test_patients`), never on training rows.
+Each test row is a full DDXPlus questionnaire (every symptom answered yes or no).
 
-Misclassified test rows: {'; '.join(f'{t} → {p} ({n})' for t, p, n in errors) or 'none'}.
-Confusion matrix: `ml/confusion_matrix.png`.
+| Rows | Accuracy | Top-3 accuracy | Macro F1 | Department accuracy |
+| --- | --- | --- | --- | --- |
+| All {full['rows']} test rows | {full['accuracy']:.4f} | {full['top3']:.4f} | {full['macro_f1']:.4f} | {full['dept_accuracy']:.4f} |
+| {unseen['rows']} rows whose symptom pattern is not in the training split | {unseen['accuracy']:.4f} | {unseen['top3']:.4f} | {unseen['macro_f1']:.4f} | {unseen['dept_accuracy']:.4f} |
 
-## 2. Department accuracy: old keyword scorer vs new method
+{int(seen.sum())} of the {full['rows']} test rows have exactly the same symptoms and illness as a training
+row: the synthetic generator repeats patterns across splits. The second line is the fairer figure.
 
-Cases are written as text from held-out rows, e.g. "itching, skin rash and nodal skin eruptions".
-Negation cases have two real symptoms and three negated symptoms typical of one illness in another
-department ("no a, no b, no c, but x and y"). The correct department comes from the illness via `ml/disease_dept.py`.
+Department accuracy = the department of the predicted illness equals the department of the true
+illness (map: `ml/data/disease_dept.json`, provisional).
 
-### Standard cases ({len(standard)})
-{table([(l, f'{c}/{t}', f'{a:.1%}') for l, c, t, a in sections['Standard cases']], ['Method', 'Correct', 'Accuracy'])}
+Illnesses with the lowest accuracy:
 
-### Negation cases ({len(negation)})
-{table([(l, f'{c}/{t}', f'{a:.1%}') for l, c, t, a in sections['Negation cases']], ['Method', 'Correct', 'Accuracy'])}
+{table([(name, f"{r['mean']:.2f}", int(r['size'])) for name, r in worst.iterrows()], ['Illness', 'Accuracy', 'Test rows'])}
 
-### All cases ({len(standard) + len(negation)})
-{table([(l, f'{c}/{t}', f'{a:.1%}') for l, c, t, a in sections['All cases']], ['Method', 'Correct', 'Accuracy'])}
+## 2. Whole pipeline on typed descriptions
 
-New method statuses over all cases: {', '.join(f'{k} {v}' for k, v in statuses.items())}.
+{n} descriptions written from random test rows, each naming {SYMPTOMS_PER_TEXT} of the row's symptoms by label
+(e.g. "{cases[0]['text'] if cases else ''}"), run through text matching → red flags → Random Forest.
+Users type a few symptoms, not a {len(columns)}-item questionnaire, so this is much harder than section 1.
 
-**Reading these numbers fairly.**
-- The test texts use the dataset's own symptom names, which the Naive Bayes model knows exactly but the
-  old keyword list mostly does not (only 13 of the 131 dataset symptoms are among its keywords), so the
-  comparison favours the new method.
-- The "correct" department is defined by the same disease → department map the new method uses. If
-  that map is wrong for an illness, the new method is still scored as right. The map needs review by a
-  medical professional.
-- The old scorer answers General Medicine when it recognises no keyword; {old_default_hits} of its
-  {old_correct} correct answers are that default landing on an illness mapped to General Medicine.
-- The "without negation detection" row shows what the negation step adds: negated misleading symptoms
-  are otherwise counted as present. On the negation cases it lifts Naive Bayes from
-  {neg_rows[3][1]}/{neg_rows[3][2]} to {neg_rows[1][1]}/{neg_rows[1][2]}.
-- The negation cases keep only two real symptoms, so several are genuinely ambiguous (for example
-  "nausea and sweating" for Malaria); those failures come from too little information, not from
-  negation handling.
+Statuses: {', '.join(f'{k} {v}' for k, v in statuses.most_common())}.
+
+| Method | Correct department | Accuracy |
+| --- | --- | --- |
+| Smart check only (non-ok counted as wrong; emergency = Emergency Medicine) | {acc['new']}/{n} | {acc['new'] / n:.1%} |
+| As shipped (non-ok → keyword checker) | {acc['shipped']}/{n} | {acc['shipped'] / n:.1%} |
+| Old keyword checker | {acc['old']}/{n} | {acc['old'] / n:.1%} |
+| Smart check, "ok" results only | {sum(c['new'] == c['correct'] for c in ok_cases)}/{len(ok_cases)} | {ok_acc:.1%} |
+
+On "ok" results the true illness is in the top three {ok_top3:.1%} of the time. Follow-up
+questions (information gain) are not used here; each description is a single request.
 
 ## 3. Negation detection
 
-{neg_passed} of {neg_total} unit tests passed ({neg_passed / neg_total:.0%}).
-{chr(10).join(neg_failures)}
+{neg_passed} of {neg_total} negation unit tests pass (`ml/test_negation.py`).
 
 ## 4. TOPSIS doctor ranking — weight sensitivity
 
 Worked example (A, B, C; free hours = benefit, caseload = cost, experience = benefit).
-The project's Doctor model has no experience field, so the live ranking uses free hours and caseload
-with weights 0.5 / 0.5 (the default 0.4 / 0.4 renormalised).
 
 {table(sens_rows, ['Weights (free / caseload / experience)', 'A', 'B', 'C', 'Ranking'])}
 
-## 5. Training details
+## 5. Data
 
-{training_body}
+| | Training split | Test split |
+| --- | --- | --- |
+| Source file | `release_validate_patients` (see note) | `release_test_patients` |
+| Rows after removing duplicates and capping per illness | {len(train)} | {len(test)} |
+| Rows per illness (min / median / max) | {spread(train_counts)} | {spread(test_counts)} |
+
+- Columns: the {len(columns)} DDXPlus symptoms (no history items, no demographics); categorical and
+  multi-choice answers collapsed to present/absent (absent = the evidence's default value).
+- **Training used the DDXPlus validation split** because `release_train_patients` was not available.
+  When it is, rerun `python -m ml.ddxplus_adapter --split train` and `python -m ml.train_model`.
+- Removing duplicates leaves few distinct patterns for some illnesses (as few as {train_counts.min()}),
+  so the per-illness cap cannot make the classes balanced.
+- Follow-up details always present with their parent question are filled in with it at
+  prediction time: {', '.join(f'{c} → {p}' for c, p in artifact['implied'].items())}.
+- Pain location is also split into {sum(x.parent == PAIN_LOCATION for x in get_schema().symptoms)} body-region columns (headache, chest pain,
+  stomach pain...; `PAIN_REGIONS` in `ml/ddxplus_adapter.py`), so typed pain keeps its location.
+- "pain" is filled in for symptoms that come with it in nearly every training row
+  (DDXPlus asks it as a gate question): {', '.join(sorted(get_schema().label(c) for c in artifact.get('gated', {}) if get_schema().symptom(c).parent != PAIN_LOCATION)) or 'none'}.
 
 ## 6. Items that need review
 
-- Disease → department map (`ml/disease_dept.py`), especially: {', '.join(UNCERTAIN)}.
-- TOPSIS weights (`DEFAULT_WEIGHTS` in `ml/topsis.py`) and the assumed 30 minutes per appointment
-  (`APPOINTMENT_HOURS` in `apps/recommendations/smart_views.py`).
-- Confidence threshold 40 % (`MIN_DEPARTMENT_PROBABILITY`) and minimum of 2 symptoms (`MIN_SYMPTOMS`)
-  in `ml/symptom_model.py`.
+- **Department map** (`ml/data/disease_dept.json`) is provisional, in particular:
+  {'; '.join(f'{k}: {v}' for k, v in UNCERTAIN.items())}.
+- **Red-flag rules** (`ml/red_flags.py`) and **symptom labels** (`ml/data/ddxplus_labels.json`).
+- **Synonyms** (`ml/data/symptom_synonyms.json`): machine-drafted, every entry marked "needs review";
+  Nepali and Romanised Nepali phrases still to be added.
+- Confidence threshold {symptom_model.MIN_DEPARTMENT_PROBABILITY:.0%} (`MIN_DEPARTMENT_PROBABILITY`) and minimum
+  of {symptom_model.MIN_SYMPTOMS} symptoms (`MIN_SYMPTOMS`) in `ml/symptom_model.py`.
+- TOPSIS weights and the assumed 30 minutes per appointment.
 
-## Appendix: every case
+## Appendix: the first 30 typed descriptions
 
-{table(case_rows, ['#', 'Type', 'Text', 'Illness', 'Correct dept', 'Old', 'New (NB)', 'New system', 'OK'])}
+{table([(i + 1, c['text'], c['illness'], c['correct'], c['status'], c['new'] or '—', c['old'], '✓' if c['shipped'] == c['correct'] else '✗')
+        for i, c in enumerate(cases[:30])], ['#', 'Text', 'Illness', 'Correct dept', 'Status', 'Smart', 'Keyword', 'Shipped OK'])}
 """, encoding='utf-8')
     print(f'\nWrote {RESULTS.relative_to(ML_DIR.parent)}')
 

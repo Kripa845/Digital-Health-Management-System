@@ -55,7 +55,7 @@ export function DoctorAppointments() {
     <div className="space-y-8">
       <PageHeader
         title="Appointments"
-        description="Your schedule at a glance. New requests are approved by an administrator; you complete visits once they're accepted."
+        description="Your schedule at a glance."
         icon={CalendarDays}
       />
 

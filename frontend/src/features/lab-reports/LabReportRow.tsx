@@ -125,7 +125,7 @@ export function LabReportRow({ report, canDelete = true }: Props) {
         <div className="border-t border-border bg-surface-2/40 px-4 pb-4 pt-3">
           {confirmed && <LabReportSummary report={report} compact />}
           {savedDocument && (
-            <p className="text-sm text-muted-foreground">Saved as a document only. No health card values were found, so the dashboard did not change.</p>
+            <p className="text-sm text-muted-foreground">Saved as a document. No health card values were found.</p>
           )}
           {pending && (canDelete
             ? <LabReportPreview report={report} />

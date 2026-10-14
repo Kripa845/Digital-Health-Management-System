@@ -1,9 +1,10 @@
 import axios, { type AxiosInstance } from 'axios'
 import type {
-  AccessRequest, AdminStats, Appointment, AppointmentStats, AuditLog,
+  AccessRequest, ActivityAnalysis, ActivityAnalysisParams, ActivityFlag, ActivityFlagStatus, ActivitySettings, SuspiciousAlert, SuspiciousDetection,
+  AdminStats, Appointment, AppointmentStats, AuditLog, AvailableDates, AvailableSlots,
   CurrentUser, Doctor, DoctorAssignment, LabReport, LoginResponse, MedDocument,
   ApiErrorBody, ConfirmPayload, LabDashboard, LabReportStatusInfo, LabReviewItem,
-  Notification, Patient, Prescription, Recommendation, Session, SmartCheckResult,
+  Notification, Patient, Prescription, RankingSettings, Recommendation, Session, SmartCheckResult,
 } from './types'
 
 const API_ROOT =
@@ -164,6 +165,12 @@ export const doctorService = {
   remove: async (id: number | string) => (await api.delete(`/doctors/${id}/`)).data,
   resetPassword: async (id: number | string, new_password?: string) =>
     (await api.post(`/doctors/${id}/reset_password/`, new_password ? { new_password } : {})).data,
+  /** Days in the next 30 (Kathmandu time) on which the doctor has a free slot. */
+  availableDates: async (id: number | string): Promise<AvailableDates> =>
+    (await api.get(`/doctors/${id}/available-dates/`)).data,
+  /** Free slot start times ("HH:MM") on a "YYYY-MM-DD" date. */
+  availableSlots: async (id: number | string, date: string): Promise<AvailableSlots> =>
+    (await api.get(`/doctors/${id}/available-slots/`, { params: { date } })).data,
 }
 
 // ── Assignments ───────────────────────────────────────────────────────
@@ -187,14 +194,20 @@ export const recommendationService = {
   list: async (params?: any): Promise<Recommendation[]> => listAll('/recommendations/', params),
   create: async (data: {
     symptoms: string; pain_level: number; age?: number; medical_history?: string; patient_id?: number
-  }): Promise<Recommendation> => (await axios.post(`${BASE}/recommendations/`, data, {
-    headers: session.access ? { Authorization: `Bearer ${session.access}` } : {},
-  })).data,
-  /** Naive Bayes + TOPSIS suggestion; open to guests like create(). */
-  smartCheck: async (data: { text: string; patient_id?: number }): Promise<SmartCheckResult> =>
-    (await axios.post(`${BASE}/smart-symptom-check/`, data, {
-      headers: session.access ? { Authorization: `Bearer ${session.access}` } : {},
-    })).data,
+  }): Promise<Recommendation> => (await api.post('/recommendations/', data)).data,
+  /** Red flags + Random Forest + AHP-weighted TOPSIS suggestion; open to guests like create().
+   *  "answers" are the replies to earlier follow-up questions ({ symptom: yes? }).
+   *  Uses `api` so an expired access token is refreshed: DRF answers 401 to a stale token
+   *  even on this AllowAny endpoint, which the page would show as "not available". */
+  smartCheck: async (data: { text: string; patient_id?: number; answers?: Record<string, boolean>; dismissed?: string[] }): Promise<SmartCheckResult> =>
+    (await api.post('/smart-symptom-check/', data)).data,
+}
+
+// AHP comparisons that set the doctor-ranking weights (admin only).
+export const rankingSettingsService = {
+  get: async (): Promise<RankingSettings> => (await api.get('/ranking-settings/')).data,
+  update: async (ahp_pairwise: number[][]): Promise<RankingSettings> =>
+    (await api.put('/ranking-settings/', { ahp_pairwise })).data,
 }
 
 // ── Documents ─────────────────────────────────────────────────────────
@@ -245,6 +258,38 @@ export const accessRequestService = {
 // ── Audit ─────────────────────────────────────────────────────────────
 export const auditService = {
   list: async (params?: any): Promise<AuditLog[]> => listAll('/audit-logs/', params),
+}
+
+// Unusual activity flagged by the flag_activity_anomalies command (admin only, review only).
+export const activityFlagService = {
+  list: async (params?: any): Promise<ActivityFlag[]> => listAll('/activity-flags/', params),
+  review: async (id: number, body: { status: ActivityFlagStatus; note: string }): Promise<ActivityFlag> =>
+    (await api.patch(`/activity-flags/${id}/`, body)).data,
+}
+
+// Suspicious user-days found by DBSCAN (detect_suspicious or detect/) (admin only, review only).
+export const suspiciousAlertService = {
+  list: async (params?: any): Promise<SuspiciousAlert[]> => listAll('/suspicious-alerts/', params),
+  setStatus: async (id: number, status: ActivityFlagStatus): Promise<SuspiciousAlert> =>
+    (await api.patch(`/suspicious-alerts/${id}/`, { status })).data,
+  /** Run DBSCAN for today; without force the server reuses a run from the last two minutes. */
+  detect: async (force = false): Promise<SuspiciousDetection> =>
+    (await api.post('/suspicious-alerts/detect/', { force })).data,
+}
+
+// Step-by-step DBSCAN analysis: GET previews (demo data allowed), POST saves flags (all, or just user_ids).
+export const activityAnalysisService = {
+  preview: async (params: ActivityAnalysisParams): Promise<ActivityAnalysis> =>
+    (await api.get('/activity-analysis/', { params })).data,
+  saveFlags: async (params: Omit<ActivityAnalysisParams, 'demo'> & { user_ids?: number[] }):
+    Promise<{ role: string; n_users: number; flagged: number; created: number; updated: number }> =>
+    (await api.post('/activity-analysis/', params)).data,
+}
+
+export const activitySettingsService = {
+  get: async (): Promise<ActivitySettings> => (await api.get('/activity-settings/')).data,
+  update: async (body: Omit<ActivitySettings, 'updated_at'>): Promise<ActivitySettings> =>
+    (await api.put('/activity-settings/', body)).data,
 }
 
 // ── Lab Reports ───────────────────────────────────────────────────────────────

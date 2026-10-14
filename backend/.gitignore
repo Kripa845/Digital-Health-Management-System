@@ -9,3 +9,9 @@ staticfiles/
 .pytest_cache/
 e2e.sqlite3
 e2e-media/
+demo.sqlite3
+
+# DDXPlus source files (download separately, CC-BY) and the large generated splits
+ml/data/ddxplus/
+ml/data/train/
+ml/data/test/

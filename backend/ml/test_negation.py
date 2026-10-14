@@ -16,14 +16,14 @@ CASES = [
     ('no fever but headache and cough', ['cough', 'headache']),
     ('fever and cough', ['cough', 'fever']),
     ('I have no chest pain', []),
-    ('without fever, cough present', ['cough']),
+    ('without fever, cough present', []),                # a list after a cue: cough is negated too
     ('not feeling dizziness. fever', ['fever']),
     ('no fever, no cough, headache', ['headache']),
     # Multi-word symptoms and underscores
     ('I have a skin rash and itching', ['itching', 'skin_rash']),
     ('skin_rash since yesterday', ['skin_rash']),
     ('severe chest pain and dizziness', ['chest pain', 'dizziness']),
-    ('high fever with vomiting', ['fever', 'high fever', 'vomiting']),
+    ('high fever with vomiting', ['high fever', 'vomiting']),   # longest match: no separate 'fever'
     # Other negation words
     ('patient denies nausea, has vomiting', ['vomiting']),
     ('I never had headache', []),
@@ -36,8 +36,8 @@ CASES = [
     ('not tired although fatigue sometimes', ['fatigue']),
     ('no nausea; vomiting', []),                           # ";" is not a stopper: "no" still applies
     ('no headache. back pain', ['back pain']),
-    # Repeated mention: one non-negated mention is enough
-    ('no fever yesterday, but fever today', ['fever']),
+    # Repeated mention: the explicit negation wins
+    ('no fever yesterday, but fever today', []),
     # Case, punctuation, empty input
     ('FEVER! Cough? Joint-pain', ['cough', 'fever', 'joint pain']),
     ('', []),

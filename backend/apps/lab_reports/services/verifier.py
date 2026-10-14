@@ -1,22 +1,4 @@
-"""Identity gate: decide whether a report may be applied to a patient.
 
-IDs are compared on their digits only; every letter is ignored. PAT-79028232,
-"PAT 7902 8232", "Patient ID: 79028232" and "Name: Hari Tamang (79028232)" all
-match the patient PAT-79028232. An ID with fewer than MIN_ID_DIGITS digits is
-compared on its whole code instead, since so few digits match too easily.
-
-Outcomes
-    pass    the patient ID number on the report equals the patient's,
-            and nothing else contradicts it → preview for confirmation
-    review  no comparable ID, an ID that only matches after OCR look-alike
-            correction (O/0, I/1, S/5...), or a name / date of birth / age
-            that disagrees → NEEDS_REVIEW by an admin, never auto-accepted
-    reject  a different ID printed with the PAT prefix → nothing is stored
-            (a different bare number may be the lab's own ID: review instead)
-
-Messages never reveal anything read from the report (another person's name,
-ID or data). IDs are masked before they are logged.
-"""
 from __future__ import annotations
 
 import re

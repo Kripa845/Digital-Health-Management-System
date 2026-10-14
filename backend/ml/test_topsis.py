@@ -1,10 +1,7 @@
-"""Tests for ml/topsis.py.
 
-Run:  python -m ml.test_topsis      or     python -m pytest ml/test_topsis.py
-"""
 import numpy as np
 
-from ml.topsis import DEFAULT_WEIGHTS, criteria_weights, topsis
+from ml.topsis import DEFAULT_WEIGHTS, criteria_weights, topsis, validate_weights
 
 EXAMPLE = [[10, 20, 5], [6, 8, 10], [12, 25, 15]]       # doctors A, B, C
 EXAMPLE_WEIGHTS = [0.4, 0.4, 0.2]
@@ -40,8 +37,40 @@ def cases():
         yield 'mismatched weights raise ValueError', True
 
 
+def more_cases():
+    w3 = [0.4, 0.4, 0.2]
+    b3 = [True, False, True]
+    # All doctors equal on every criterion: no division by zero, identical scores.
+    same = topsis([[8, 3, 5], [8, 3, 5], [8, 3, 5]], w3, b3)
+    yield 'all doctors equal: finite, identical scores', np.isfinite(same).all() and len(set(same.round(6))) == 1
+    # Equal on two criteria: experience alone decides.
+    exp = topsis([[8, 3, 2], [8, 3, 12]], w3, b3)
+    yield 'equal hours and caseload: more experience ranks higher', exp[1] > exp[0]
+    # Missing data never helps a doctor.
+    filled = topsis([[10, 20, None], [6, 8, 10], [12, 25, 15]], w3, b3)
+    worst_exp = topsis([[10, 20, 10], [6, 8, 10], [12, 25, 15]], w3, b3)
+    yield 'missing benefit value counts as the worst seen', np.allclose(filled, worst_exp)
+    filled_cost = topsis([[10, float('nan'), 5], [6, 8, 10], [12, 25, 15]], w3, b3)
+    worst_cost = topsis([[10, 25, 5], [6, 8, 10], [12, 25, 15]], w3, b3)
+    yield 'missing cost value counts as the worst seen', np.allclose(filled_cost, worst_cost)
+    whole = topsis([[10, 20, None], [6, 8, None]], w3, b3)
+    yield 'a fully missing column does not break the ranking', np.isfinite(whole).all() and whole[1] > whole[0]
+    # Weight validation (the app reads its weights from settings).
+    yield 'valid weights accepted', validate_weights({'free_hours': 0.5, 'caseload': 0.3, 'experience': 0.2}) == {
+        'free_hours': 0.5, 'caseload': 0.3, 'experience': 0.2}
+    for bad, label in (({'free_hours': 0.5, 'caseload': 0.5, 'experience': 0.5}, 'sum not 1'),
+                       ({'free_hours': 1.2, 'caseload': -0.2}, 'negative'),
+                       ({'free_hours': 0.5, 'rating': 0.5}, 'unknown criterion'),
+                       ({}, 'empty')):
+        try:
+            validate_weights(bad)
+            yield f'invalid weights rejected ({label})', False
+        except ValueError:
+            yield f'invalid weights rejected ({label})', True
+
+
 def run():
-    results = list(cases())
+    results = list(cases()) + list(more_cases())
     return results, sum(ok for _, ok in results)
 
 

@@ -39,6 +39,7 @@ _UPDATABLE_PATIENT_FIELDS: frozenset[str] = frozenset({
     'ssgpt_alt',
     'ssgot_ast',
     'bilirubin_total',
+    'bilirubin_direct',
     'tsh',
     't3',
     't4',

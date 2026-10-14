@@ -209,8 +209,7 @@ export function LabReportUploadDialog({
             Upload laboratory report
           </DialogTitle>
           <DialogDescription>
-            Upload a PDF or image of a laboratory report. The values are read automatically and
-            shown to you for checking before the health cards are updated.
+            PDF or image. You check the values before anything is saved.
           </DialogDescription>
         </DialogHeader>
 
@@ -269,8 +268,7 @@ export function LabReportUploadDialog({
             <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] border border-info/30 bg-info-soft/40 px-3.5 py-3 text-sm text-info">
               <Info className="mt-0.5 size-4 shrink-0" />
               <p>
-                The patient ID on the report must match the patient, or nothing is changed.
-                The original file is stored encrypted and can be downloaded later.
+                The patient ID on the report must match, or nothing is changed.
               </p>
             </div>
 
@@ -357,8 +355,7 @@ export function LabReportUploadDialog({
             <div className="rounded-[var(--radius-md)] border border-info/30 bg-info-soft/40 px-4 py-3 text-sm">
               <p className="font-semibold text-info">Sent for review</p>
               <p className="mt-1 text-muted-foreground">
-                The report could not be verified automatically, so nothing was applied. Review it under
-                Lab Report Review before the values can be confirmed.
+                Nothing was applied. The report has been held for an administrator to check.
               </p>
               {!!result.review_messages?.length && (
                 <ul className="mt-2 list-disc pl-5">{result.review_messages.map((m) => <li key={m}>{m}</li>)}</ul>
@@ -378,7 +375,7 @@ export function LabReportUploadDialog({
               <div>
                 <p className="text-sm font-semibold text-success">Health record updated</p>
                 <p className="text-xs text-muted-foreground">
-                  The report is saved in the history · Original file stored encrypted
+                  Saved to the history.
                 </p>
               </div>
             </div>

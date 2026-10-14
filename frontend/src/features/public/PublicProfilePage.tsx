@@ -83,7 +83,7 @@ export function PublicProfilePage() {
             </CardContent>
             <div className="flex items-center gap-2 border-t border-border bg-surface-2/50 px-6 py-4 text-xs text-muted-foreground">
               <Lock className="size-3.5 shrink-0" />
-              <p className="text-pretty">Medical records, medications and reports are private. Only assigned clinicians can access them after signing in.</p>
+              <p className="text-pretty">Medical records are private to assigned clinicians.</p>
             </div>
           </Card>
         )}

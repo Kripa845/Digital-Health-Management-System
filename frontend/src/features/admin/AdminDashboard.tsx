@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard, Users, Stethoscope, CalendarDays, ShieldCheck, TrendingUp,
-  ArrowRight, UserPlus, ScrollText, Settings, Sparkles,
+  ArrowRight, UserPlus, ScrollText, Settings, Sparkles, Siren,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import {
 } from '@/components/patterns'
 import { ActiveStatusBadge } from '@/components/status-badge'
 import { authService } from '@/lib/api'
+import { NewAlertsBanner, useNewSuspiciousAlerts } from '@/components/suspicious-alerts'
 import { formatDate } from '@/lib/utils'
 import type { AdminStats } from '@/lib/types'
 
@@ -29,6 +30,9 @@ export function AdminDashboard() {
     queryFn: () => authService.adminStats(),
   })
   const stats: AdminStats | undefined = statsQ.data
+  // Same key as the alerts page's "New" filter, so reviewing an alert there updates this count.
+  const alertsQ = useNewSuspiciousAlerts()
+  const newAlerts = alertsQ.data?.length ?? 0
 
   const chart = stats?.registration_chart ?? []
   const dayTotal = (d: { patients: number; doctors: number }) => d.patients + d.doctors
@@ -38,7 +42,7 @@ export function AdminDashboard() {
     <div className="space-y-8">
       <PageHeader
         title="System overview"
-        description="A live snapshot of registrations, care teams, and activity across Mero Care Card."
+        description="A live overview of Mero Care Card."
         icon={LayoutDashboard}
         actions={
           <>
@@ -47,6 +51,8 @@ export function AdminDashboard() {
           </>
         }
       />
+
+      <NewAlertsBanner count={newAlerts} showLink />
 
       {/* Primary stats */}
       {statsQ.isLoading ? (
@@ -61,6 +67,17 @@ export function AdminDashboard() {
           <StatCard label="Total users" value={stats?.total_users ?? '—'} icon={CalendarDays} tone="neutral" hint={`${stats?.inactive_users ?? 0} inactive`} />
         </div>
       )}
+
+      {/* Suspicious activity awaiting review */}
+      <Link to="/admin/suspicious-alerts" className="block rounded-[var(--radius-lg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+        <StatCard
+          label="New suspicious activity alerts"
+          value={alertsQ.isLoading ? '…' : alertsQ.isError ? '—' : newAlerts}
+          icon={Siren}
+          tone={newAlerts > 0 ? 'danger' : 'success'}
+          hint={alertsQ.isError ? 'Could not load alerts' : newAlerts > 0 ? 'Awaiting review · open Suspicious Alerts' : 'Nothing awaiting review'}
+        />
+      </Link>
 
       <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
         {/* Registration chart */}
@@ -122,11 +139,11 @@ export function AdminDashboard() {
               </Link>
             ))}
             <Link
-              to="/admin/recommendations"
+              to="/admin/symptom-checker"
               className="flex items-center gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-3.5 py-2.5 text-sm font-medium transition-colors hover:bg-surface-2"
             >
               <Sparkles className="size-4.5 text-primary" />
-              <span className="flex-1">Recommendation history</span>
+              <span className="flex-1">Symptom checker</span>
               <ArrowRight className="size-4 text-subtle-foreground" />
             </Link>
           </div>

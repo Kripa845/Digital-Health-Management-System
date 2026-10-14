@@ -84,11 +84,47 @@ def check_value(field: str, raw_value: str, raw_unit: str = '') -> Checked:
     return Checked(conversion.value, conversion.unit, conversion.converted)
 
 
+def decimal_suggestion(field: str, raw_value: str, raw_unit: str = '', reference_range: str = '') -> str | None:
+    """For a whole number read outside the plausible range, the same digits with a decimal
+    point that are plausible ("1302" cholesterol → "130.2"); None when there is none.
+
+    Only a reading with more digits than any plausible value can have is a likely lost
+    decimal point (cholesterol 1302 when the most is 500; haemoglobin 134 when the most
+    is 25). "45" haemoglobin or "900" cholesterol could be other misreads, so they get no
+    suggestion and are dropped as before. One or two decimal places are tried; one inside the range printed on the report is
+    preferred. The suggestion is in the printed unit and is only ever shown for the user
+    to confirm.
+    """
+    raw = (raw_value or '').strip()
+    if field not in _PLAUSIBLE_RANGES or not raw.isdigit() or len(raw) < 2:
+        return None
+    checked = check_value(field, raw, raw_unit)
+    if checked.value is None or checked.flag not in (INVALID, OUT_OF_RANGE):
+        return None
+    most_digits = len(str(int(_PLAUSIBLE_RANGES[field][1])))
+    if len(str(int(float(checked.value)))) <= most_digits:
+        return None
+    candidates = [f'{raw[:-k]}.{raw[-k:]}' for k in (1, 2) if len(raw) > k]
+    candidates = [c for c in candidates if check_value(field, c, raw_unit).flag == '']
+    if not candidates:
+        return None
+    from apps.lab_reports.services.review import parse_reference_range
+    ref = parse_reference_range(reference_range)
+    if ref:
+        inside = [c for c in candidates
+                  if (ref.low is None or float(c) >= ref.low) and (ref.high is None or float(c) <= ref.high)]
+        if inside:
+            return inside[0]
+    return candidates[0]
+
+
 def is_usable(field: str, raw_value: str, raw_unit: str = '') -> bool:
-    """Whether an extracted value could be saved (possibly after the user accepts a flag)."""
+    """Whether an extracted value could be saved (possibly after the user accepts a flag
+    or confirms a suggested decimal point)."""
     if field == 'blood_group':
         return normalise_blood_group(raw_value) is not None
-    return check_value(field, raw_value, raw_unit).flag in ('', OUT_OF_RANGE)
+    return (check_value(field, raw_value, raw_unit).flag in ('', OUT_OF_RANGE)
+            or decimal_suggestion(field, raw_value, raw_unit) is not None)
 
 
 def check_edited_value(field: str, text: str) -> Checked:

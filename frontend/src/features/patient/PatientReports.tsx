@@ -5,7 +5,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Field } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -64,7 +64,7 @@ function UploadDialog({ patientId }: { patientId: number }) {
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset() }}>
       <DialogTrigger asChild>
-        <Button><Plus className="size-4" /> Upload report</Button>
+        <Button variant="secondary" size="sm"><Plus className="size-3.5" /> Add document</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -130,18 +130,18 @@ function ReportRow({ doc, patientId }: { doc: MedDocument; patientId: number }) 
   const isMedical = doc.report_type === 'MEDICAL'
 
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-md)] bg-info-soft text-info">
-          <FileText className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{doc.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {doc.file_type || '—'} · {formatBytes(doc.size)} · {formatDate(doc.uploaded_at)}
-          </p>
-        </div>
-        <Badge variant={isMedical ? 'primary' : 'neutral'}>{isMedical ? 'Medical' : 'Additional'}</Badge>
+    <Card className="flex flex-wrap items-center gap-3 p-4">
+      <span className="grid size-10 shrink-0 place-items-center rounded-[var(--radius-md)] bg-info-soft text-info">
+        <FileText className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="truncate text-sm font-semibold">{doc.name}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {doc.file_type || '—'} · {formatBytes(doc.size)} · {formatDate(doc.uploaded_at)}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <Badge variant={isMedical ? 'primary' : 'neutral'} className="mr-2">{isMedical ? 'Medical' : 'Additional'}</Badge>
         <Button variant="ghost" size="icon-sm" onClick={download} loading={downloading} aria-label="Download report">
           {!downloading && <Download className="size-4" />}
         </Button>
@@ -152,6 +152,15 @@ function ReportRow({ doc, patientId }: { doc: MedDocument; patientId: number }) 
         )}
       </div>
     </Card>
+  )
+}
+
+function RxField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <dt className="text-xs font-medium uppercase tracking-wide text-subtle-foreground">{label}</dt>
+      <dd className="text-sm leading-relaxed text-muted-foreground text-pretty">{children}</dd>
+    </div>
   )
 }
 
@@ -202,18 +211,15 @@ export function PatientReports() {
     <div className="space-y-10">
       <PageHeader
         title="Reports & prescriptions"
-        description="Upload laboratory reports, view medical documents, and review prescriptions from your care team."
+        description="Your lab reports, medical documents and prescriptions in one place."
         icon={FileText}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild><Link to="/patient/lab-reports/upload"><FlaskConical className="size-4" />Upload lab report</Link></Button>
-            <UploadDialog patientId={patientId} />
-          </div>
+          <Button asChild><Link to="/patient/lab-reports/upload"><FlaskConical className="size-4" />Upload lab report</Link></Button>
         }
       />
 
       {/* ── Lab Reports ─────────────────────────────────────────────── */}
-      <section className="space-y-3">
+      <section className="space-y-4">
         <SectionTitle
           action={<Button asChild variant="secondary" size="sm"><Link to="/patient/lab-reports"><FlaskConical className="size-3.5" />All lab reports</Link></Button>}
         >
@@ -228,8 +234,7 @@ export function PatientReports() {
             <EmptyState
               icon={FlaskConical}
               title="No laboratory reports yet"
-              description="Upload a lab report to fill in your health cards. You check the values before anything changes."
-              action={<Button asChild><Link to="/patient/lab-reports/upload">Upload lab report</Link></Button>}
+              description="Upload a lab report to update your health cards."
             />
           }
         >
@@ -242,7 +247,7 @@ export function PatientReports() {
       </section>
 
       {/* ── General documents ───────────────────────────────────────── */}
-      <section className="space-y-3">
+      <section className="space-y-4">
         <SectionTitle action={<UploadDialog patientId={patientId} />}>My reports</SectionTitle>
         <DataState
           isLoading={documentsQ.isLoading}
@@ -253,8 +258,7 @@ export function PatientReports() {
             <EmptyState
               icon={FileText}
               title="No reports yet"
-              description="Medical reports added by your care team and your own uploads will appear here."
-              action={<UploadDialog patientId={patientId} />}
+              description="Your reports will appear here."
             />
           }
         >
@@ -265,7 +269,7 @@ export function PatientReports() {
       </section>
 
       {/* ── Prescriptions ───────────────────────────────────────────── */}
-      <section className="space-y-3">
+      <section className="space-y-4">
         <SectionTitle>Prescriptions</SectionTitle>
         <DataState
           isLoading={prescriptionsQ.isLoading}
@@ -276,46 +280,34 @@ export function PatientReports() {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             {prescriptions.map((rx) => (
-              <Card key={rx.id}>
-                <CardContent className="space-y-3 p-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="grid size-9 place-items-center rounded-[var(--radius-md)] bg-success-soft text-success">
-                        <Pill className="size-4.5" />
-                      </span>
-                      <span className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">Prescription</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{formatDate(rx.prescription_date)}</span>
+              <Card key={rx.id} className="flex flex-col">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-[var(--radius-md)] bg-success-soft text-success">
+                      <Pill className="size-4" />
+                    </span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">Prescription</span>
                   </div>
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-subtle-foreground">Diagnosis</p>
-                    <p className="text-sm font-medium text-pretty">{rx.diagnosis}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-subtle-foreground">Medications</p>
-                    <p className="text-sm text-muted-foreground text-pretty leading-relaxed">{rx.medications}</p>
-                  </div>
-                  {rx.notes && (
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-subtle-foreground">Notes</p>
-                      <p className="text-sm text-muted-foreground text-pretty leading-relaxed">{rx.notes}</p>
-                    </div>
-                  )}
-                  {rx.doctor_name && (
-                    <p className="border-t border-border pt-3 text-xs text-muted-foreground">Issued by {rx.doctor_name}</p>
-                  )}
-                </CardContent>
+                  <span className="text-xs text-muted-foreground">{formatDate(rx.prescription_date)}</span>
+                </div>
+                <dl className="flex-1 space-y-4 p-5">
+                  <RxField label="Diagnosis"><span className="font-medium text-foreground">{rx.diagnosis}</span></RxField>
+                  <RxField label="Medications">{rx.medications}</RxField>
+                  {rx.notes && <RxField label="Notes">{rx.notes}</RxField>}
+                </dl>
+                {rx.doctor_name && (
+                  <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground">Issued by {rx.doctor_name}</p>
+                )}
               </Card>
             ))}
           </div>
         </DataState>
       </section>
 
-      <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border bg-surface-2/50 p-4">
+      <div className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-border bg-surface-2/50 px-5 py-4">
         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
-        <p className="text-sm text-muted-foreground text-pretty">
-          Medical reports and prescriptions are managed by your care team. You can upload and remove your own
-          additional reports, but clinical records stay read-only to keep them accurate.
+        <p className="text-sm leading-relaxed text-muted-foreground text-pretty">
+          Medical reports and prescriptions are managed by your care team. You can add and remove your own reports.
         </p>
       </div>
     </div>

@@ -157,7 +157,7 @@ export function DoctorDashboard() {
               isEmpty={patients.length === 0}
               onRetry={patientsQ.refetch}
               empty={<EmptyState icon={Users} title="No assigned patients"
-                description="Patients assigned by an admin — or granted via an approved access request — appear here." />}
+                description="Patients assigned to you appear here." />}
             >
               <ul className="space-y-2">
                 {patients.slice(0, 5).map((p) => (
@@ -186,7 +186,7 @@ export function DoctorDashboard() {
             isEmpty={pending.length === 0}
             onRetry={appointmentsQ.refetch}
             empty={<EmptyState icon={Inbox} title="No pending requests"
-              description="New appointment requests from your patients appear here while an administrator reviews them." />}
+              description="New appointment requests appear here." />}
           >
             <ul className="space-y-2.5">
               {pending.map((a) => (

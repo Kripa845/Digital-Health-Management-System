@@ -60,7 +60,7 @@ export function LabUploadPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
         title="Upload a lab report"
-        description="Your report is read automatically. You check the values before anything on your dashboard changes."
+        description="You check the values before anything changes."
         icon={FlaskConical}
       />
 
@@ -72,8 +72,7 @@ export function LabUploadPage() {
               <div className="space-y-1">
                 <h2 className="font-semibold">Your report is being checked by the care team</h2>
                 <p className="text-sm text-muted-foreground">
-                  We couldn't confirm automatically that this report is yours, so a member of the care team will check
-                  it. You'll get a notification when it's ready for you to confirm. Nothing on your dashboard has changed.
+                  You'll be notified when it's ready to confirm. Nothing on your dashboard has changed.
                 </p>
                 {!!review.review_messages?.length && (
                   <ul className="list-disc pl-5 text-sm">{review.review_messages.map((m) => <li key={m}>{m}</li>)}</ul>
@@ -103,7 +102,7 @@ export function LabUploadPage() {
 
             <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] border border-info/30 bg-info-soft/40 px-3.5 py-3 text-sm text-info">
               <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <p>The report must show your Mero Care Card patient ID. If it doesn't, the care team checks it before you can confirm the values.</p>
+              <p>The report must show your Mero Care Card patient ID.</p>
             </div>
 
             {upload.isPending && (

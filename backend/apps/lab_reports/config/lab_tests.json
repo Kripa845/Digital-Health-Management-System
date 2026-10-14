@@ -1,0 +1,264 @@
+{
+  "_readme": [
+    "Lab test catalogue used to read report tables (services/table_reader.py, services/test_names.py).",
+    "To support a new spelling, add it to the test's 'aliases'. Aliases are compared with the WHOLE printed",
+    "test name after normalisation (lower case; punctuation, brackets and footnote marks become spaces), never",
+    "as a substring: 'Bilirubin' does not match 'Bilirubin Direct'. Unmatched names are logged and shown on the",
+    "review screen; they are never guessed.",
+    "units: printed unit (normalised by units.normalise_unit) -> multiplier to the canonical 'unit'. A unit not",
+    "listed is rejected for that test. A value printed without a unit is taken to be in the canonical unit.",
+    "plausible: [low, high] in the canonical unit. Outside it the value is treated as a likely misread",
+    "(not a clinical judgement; the clinical flag uses the range printed on the report)."
+  ],
+
+  "headers": {
+    "name": ["test", "tests", "test name", "test names", "name of test", "test description", "description",
+             "examination", "examinations", "investigation", "investigations", "parameter", "parameters",
+             "analyte", "component", "particulars", "test parameter"],
+    "value": ["result", "results", "value", "values", "observed value", "observed values", "observation",
+              "result value", "patient value", "your value", "test result", "observed"],
+    "unit": ["unit", "units", "uom", "unit of measurement"],
+    "range": ["reference range", "reference ranges", "normal range", "normal ranges", "ref range", "ref ranges",
+              "reference", "reference interval", "reference intervals", "biological reference interval",
+              "biological ref interval", "bio ref interval", "bio ref range", "biological reference range",
+              "reference value", "reference values", "normal value", "normal values", "ref interval",
+              "reference limits", "range", "expected values", "ref value", "ref values"],
+    "flag": ["flag", "flags", "h l", "status"]
+  },
+
+  "ignore_tokens": ["serum", "s", "plasma", "edta", "fluoride", "whole", "blood", "venous", "capillary", "sample",
+                    "calculated", "calc", "ise", "kinetic", "enzymatic", "ifcc", "jaffe", "urease", "god", "pod",
+                    "hexokinase", "colorimetric", "photometric", "automated", "auto", "method", "impedance",
+                    "spectrophotometry", "cyanmethaemoglobin", "cyanmethemoglobin", "electrical", "test",
+                    "level", "levels", "estimation"],
+  "ignore_qualifiers": ["direct ise", "indirect ise", "flow cytometry", "god pod", "ifcc without p5p",
+                        "modified jaffe", "jaffe kinetic", "electronic impedance"],
+
+  "unit_aliases": {
+    "mg/dl": "mg/dl", "mg%": "mg/dl", "mgs/dl": "mg/dl", "mgm/dl": "mg/dl",
+    "mmol/l": "mmol/l", "mmol": "mmol/l",
+    "umol/l": "umol/l", "micromol/l": "umol/l",
+    "g/dl": "g/dl", "gm/dl": "g/dl", "gms/dl": "g/dl", "g%": "g/dl", "gm%": "g/dl", "gms%": "g/dl",
+    "g/l": "g/l", "gm/l": "g/l",
+    "%": "%", "percent": "%", "l/l": "l/l",
+    "mmol/mol": "mmol/mol",
+    "cm": "cm", "m": "m", "in": "in", "inch": "in", "inches": "in",
+    "kg": "kg", "kgs": "kg", "lb": "lb", "lbs": "lb",
+    "mmhg": "mmhg", "mm/hg": "mmhg",
+    "bpm": "bpm", "/min": "bpm", "beats/min": "bpm",
+    "u/l": "u/l", "iu/l": "u/l",
+    "meq/l": "meq/l",
+    "miu/l": "miu/l", "uiu/ml": "miu/l", "mu/l": "miu/l", "ulu/ml": "miu/l", "u1u/ml": "miu/l", "uiu/mi": "miu/l",
+    "ng/dl": "ng/dl", "ug/dl": "ug/dl", "mcg/dl": "ug/dl", "ng/ml": "ng/ml",
+    "mm/hr": "mm/hr", "mm/h": "mm/hr", "mm/1sthr": "mm/hr", "mm/1sthour": "mm/hr", "mm/hour": "mm/hr",
+    "c": "c", "°c": "c", "f": "f", "°f": "f",
+
+    "103/ul": "10^3/ul", "106/ul": "10^6/ul", "109/l": "10^3/ul", "1012/l": "10^6/ul",
+    "1043/ul": "10^3/ul", "1046/ul": "10^6/ul", "1049/l": "10^3/ul", "10412/l": "10^6/ul",
+    "10^3/ul": "10^3/ul", "10^3/mm3": "10^3/ul", "10^3/cumm": "10^3/ul", "10^9/l": "10^3/ul",
+    "k/ul": "10^3/ul", "thou/ul": "10^3/ul", "thou/cumm": "10^3/ul", "thou/mm3": "10^3/ul",
+    "10^6/ul": "10^6/ul", "10^6/mm3": "10^6/ul", "10^6/cumm": "10^6/ul", "10^12/l": "10^6/ul",
+    "m/ul": "10^6/ul", "mil/ul": "10^6/ul", "mill/ul": "10^6/ul", "million/ul": "10^6/ul",
+    "mill/cumm": "10^6/ul", "million/cumm": "10^6/ul", "millions/cumm": "10^6/ul", "mill/mm3": "10^6/ul",
+    "million/mm3": "10^6/ul",
+    "/ul": "/ul", "/cumm": "/ul", "/mm3": "/ul", "cells/ul": "/ul", "cells/cumm": "/ul", "cells/mm3": "/ul",
+    "10^5/ul": "10^5/ul", "lakh/cumm": "10^5/ul", "lakhs/cumm": "10^5/ul", "lakh/ul": "10^5/ul",
+    "lakhs/ul": "10^5/ul", "lakh/mm3": "10^5/ul", "lakhs/mm3": "10^5/ul"
+  },
+
+  "tests": {
+    "hemoglobin": {
+      "display": "Haemoglobin", "unit": "g/dL",
+      "units": {"g/dl": 1, "g/l": "0.1", "mmol/l": "1.611"},
+      "plausible": [3, 25],
+      "aliases": ["haemoglobin", "hemoglobin", "hb", "hgb", "haemoglobin hb", "hemoglobin hb", "hb haemoglobin",
+                  "hb hemoglobin", "haemoglobin hgb", "hemoglobin hgb", "haemoglobin estimation",
+                  "haemoglobln", "hemoglobln", "haemoglob1n", "hemoglob1n"]
+    },
+    "hematocrit": {
+      "display": "Haematocrit", "unit": "%",
+      "units": {"%": 1, "l/l": 100},
+      "plausible": [5, 75],
+      "aliases": ["haematocrit", "hematocrit", "hct", "pcv", "packed cell volume", "haematocrit hct",
+                  "hematocrit hct", "packed cell volume pcv", "pcv packed cell volume", "haematocrit pcv",
+                  "hematocrit pcv", "pcv haematocrit", "pcv hematocrit"]
+    },
+    "rbc_count": {
+      "display": "RBC Count", "unit": "10^6/uL",
+      "units": {"10^6/ul": 1},
+      "plausible": [0.5, 15],
+      "aliases": ["rbc", "rbc count", "total rbc", "total rbc count", "rbc total", "red blood cell count",
+                  "red blood cells", "red blood cell", "red cell count", "rbc red blood cell count",
+                  "red blood cell count rbc", "erythrocyte count", "erythrocytes", "total erythrocyte count"]
+    },
+    "wbc_count": {
+      "display": "WBC Count", "unit": "10^3/uL",
+      "units": {"10^3/ul": 1, "/ul": "0.001"},
+      "plausible": [0.1, 9999],
+      "aliases": ["wbc", "wbc count", "total wbc", "total wbc count", "white blood cell count", "white blood cells",
+                  "white cell count", "total leucocyte count", "total leukocyte count", "tlc",
+                  "total leucocyte count tlc", "total leukocyte count tlc", "leucocyte count", "leukocyte count",
+                  "total count", "wbc total count", "white blood cell count wbc", "wbc white blood cell count",
+                  "total leukocytes count", "total leukocytes counts", "total leucocytes count",
+                  "total leucocytes counts", "total leukocyte counts", "total leucocyte counts"]
+    },
+    "platelet_count": {
+      "display": "Platelet Count", "unit": "10^3/uL",
+      "units": {"10^3/ul": 1, "/ul": "0.001", "10^5/ul": 100},
+      "plausible": [1, 9999],
+      "aliases": ["platelets", "platelet", "platelet count", "plt", "plt count", "platelet count plt",
+                  "plt platelet count", "total platelet count", "thrombocyte count", "thrombocytes",
+                  "platelets count"]
+    },
+    "esr": {
+      "display": "ESR", "unit": "mm/hr",
+      "units": {"mm/hr": 1},
+      "plausible": [0, 200],
+      "aliases": ["esr", "erythrocyte sedimentation rate", "esr westergren", "esr 1st hour", "esr 1st hr",
+                  "erythrocyte sedimentation rate esr", "esr erythrocyte sedimentation rate"]
+    },
+    "blood_sugar_fasting": {
+      "display": "Blood Sugar (Fasting)", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "mmol/l": "18.016"},
+      "plausible": [20, 600],
+      "aliases": ["fasting blood sugar", "fbs", "fbg", "fpg", "glucose fasting", "fasting glucose",
+                  "fasting blood glucose", "blood sugar fasting", "blood glucose fasting", "fasting plasma glucose",
+                  "plasma glucose fasting", "glucose f", "sugar fasting", "fasting blood sugar fbs",
+                  "fbs fasting blood sugar", "blood sugar f"]
+    },
+    "blood_sugar_random": {
+      "display": "Blood Sugar (Random)", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "mmol/l": "18.016"},
+      "plausible": [20, 800],
+      "aliases": ["random blood sugar", "rbs", "rbg", "glucose random", "random glucose", "random blood glucose",
+                  "blood sugar random", "blood glucose random", "plasma glucose random", "random plasma glucose",
+                  "glucose r", "sugar random", "rbs random blood sugar", "random blood sugar rbs", "blood sugar r",
+                  "glucose random rbs"]
+    },
+    "hba1c": {
+      "display": "HbA1C", "unit": "%",
+      "units": {"%": 1},
+      "plausible": [3, 20],
+      "aliases": ["hba1c", "hb a1c", "a1c", "glycated haemoglobin", "glycated hemoglobin",
+                  "glycosylated haemoglobin", "glycosylated hemoglobin", "haemoglobin a1c", "hemoglobin a1c",
+                  "hba1c glycated haemoglobin", "glycated haemoglobin hba1c", "glycosylated haemoglobin hba1c",
+                  "glycosylated hemoglobin hba1c", "glycated hemoglobin hba1c", "hbaic", "hbalc"]
+    },
+    "cholesterol_total": {
+      "display": "Total Cholesterol", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "mmol/l": "38.67"},
+      "plausible": [50, 500],
+      "aliases": ["total cholesterol", "cholesterol total", "cholesterol", "t chol", "total chol", "chol total",
+                  "cholesterol t", "t cholesterol"]
+    },
+    "cholesterol_hdl": {
+      "display": "HDL Cholesterol", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "mmol/l": "38.67"},
+      "plausible": [10, 1000],
+      "aliases": ["hdl", "hdl cholesterol", "hdl c", "cholesterol hdl", "hdl chol", "hdl cholesterol direct",
+                  "high density lipoprotein", "high density lipoprotein cholesterol", "hdl direct"]
+    },
+    "cholesterol_ldl": {
+      "display": "LDL Cholesterol", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "mmol/l": "38.67"},
+      "plausible": [10, 1000],
+      "aliases": ["ldl", "ldl cholesterol", "ldl c", "cholesterol ldl", "ldl chol", "ldl direct",
+                  "ldl cholesterol direct", "low density lipoprotein", "low density lipoprotein cholesterol"]
+    },
+    "triglycerides": {
+      "display": "Triglycerides", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "mmol/l": "88.57"},
+      "plausible": [10, 1000],
+      "aliases": ["triglycerides", "triglyceride", "tg", "trigs", "triglycerides tg", "tg triglycerides"]
+    },
+    "serum_creatinine": {
+      "display": "Serum Creatinine", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "umol/l": "1/88.42"},
+      "plausible": [0.1, 20],
+      "aliases": ["creatinine", "serum creatinine", "creat", "creatinine serum", "s creatinine"]
+    },
+    "blood_urea": {
+      "display": "Blood Urea", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "mmol/l": "6.006"},
+      "plausible": [1, 300],
+      "aliases": ["urea", "blood urea", "serum urea", "urea serum", "s urea"]
+    },
+    "uric_acid": {
+      "display": "Uric Acid", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "umol/l": "1/59.48"},
+      "plausible": [0.5, 20],
+      "aliases": ["uric acid", "serum uric acid", "urate", "s uric acid", "uric acid serum"]
+    },
+    "ssgpt_alt": {
+      "display": "SGPT / ALT", "unit": "U/L",
+      "units": {"u/l": 1},
+      "plausible": [1, 999],
+      "aliases": ["sgpt", "alt", "sgpt alt", "alt sgpt", "alanine aminotransferase", "alanine transaminase",
+                  "alanine aminotransferase alt", "alt alanine aminotransferase", "sgpt alanine aminotransferase",
+                  "alanine aminotransferase sgpt", "alanine transaminase alt"]
+    },
+    "ssgot_ast": {
+      "display": "SGOT / AST", "unit": "U/L",
+      "units": {"u/l": 1},
+      "plausible": [1, 999],
+      "aliases": ["sgot", "ast", "sgot ast", "ast sgot", "aspartate aminotransferase", "aspartate transaminase",
+                  "aspartate aminotransferase ast", "ast aspartate aminotransferase",
+                  "sgot aspartate aminotransferase", "aspartate aminotransferase sgot", "aspartate transaminase ast"]
+    },
+    "bilirubin_total": {
+      "display": "Bilirubin (Total)", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "umol/l": "1/17.1"},
+      "plausible": [0.1, 50],
+      "aliases": ["bilirubin total", "total bilirubin", "bilirubin", "bilirubin t", "t bilirubin", "tbil",
+                  "bilirubin total tbil", "total bilirubin tbil", "tbil total bilirubin"]
+    },
+    "bilirubin_direct": {
+      "display": "Bilirubin (Direct)", "unit": "mg/dL",
+      "units": {"mg/dl": 1, "umol/l": "1/17.1"},
+      "plausible": [0, 30],
+      "aliases": ["bilirubin direct", "direct bilirubin", "conjugated bilirubin", "bilirubin conjugated",
+                  "bilirubin d", "d bilirubin", "dbil", "bilirubin direct dbil", "direct bilirubin dbil",
+                  "bilirubin direct conjugated", "direct conjugated bilirubin"]
+    },
+    "tsh": {
+      "display": "TSH", "unit": "mIU/L",
+      "units": {"miu/l": 1},
+      "plausible": [0.001, 150],
+      "aliases": ["tsh", "thyroid stimulating hormone", "tsh ultrasensitive", "ultrasensitive tsh",
+                  "ultra sensitive tsh", "us tsh", "thyrotropin", "thyroid stimulating hormone tsh",
+                  "tsh thyroid stimulating hormone"]
+    },
+    "t3": {
+      "display": "T3", "unit": "ng/dL",
+      "units": {"ng/dl": 1, "ng/ml": 100},
+      "plausible": [0.1, 999],
+      "aliases": ["t3", "total t3", "t3 total", "triiodothyronine", "total triiodothyronine",
+                  "triiodothyronine t3", "t3 triiodothyronine"]
+    },
+    "t4": {
+      "display": "T4", "unit": "µg/dL",
+      "units": {"ug/dl": 1},
+      "plausible": [0.1, 99],
+      "aliases": ["t4", "total t4", "t4 total", "thyroxine", "total thyroxine", "thyroxine t4", "t4 thyroxine"]
+    },
+    "sodium": {
+      "display": "Sodium", "unit": "mEq/L",
+      "units": {"meq/l": 1, "mmol/l": 1},
+      "plausible": [100, 180],
+      "aliases": ["sodium", "na", "na+", "sodium na", "sodium na+", "na sodium", "serum sodium"]
+    },
+    "potassium": {
+      "display": "Potassium", "unit": "mEq/L",
+      "units": {"meq/l": 1, "mmol/l": 1},
+      "plausible": [1.5, 10],
+      "aliases": ["potassium", "k", "k+", "potassium k", "potassium k+", "k potassium", "serum potassium"]
+    },
+
+    "height":       {"unit": "cm",    "units": {"cm": 1, "m": 100, "in": "2.54"}, "plausible": [30, 250], "aliases": []},
+    "weight":       {"unit": "kg",    "units": {"kg": 1, "lb": "0.45359237"},     "plausible": [1, 300],  "aliases": []},
+    "heart_rate":   {"unit": "bpm",   "units": {"bpm": 1},                        "plausible": [30, 220], "aliases": []},
+    "spo2":         {"display": "SpO2", "unit": "%", "units": {"%": 1},           "plausible": [50, 100], "aliases": []},
+    "temperature":  {"unit": "°C/°F", "units": {"c": 1, "f": 1},                  "plausible": [30, 110], "aliases": []},
+    "blood_pressure": {"unit": "mmHg", "aliases": []}
+  }
+}

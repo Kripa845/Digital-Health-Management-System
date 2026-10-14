@@ -43,7 +43,7 @@ class DoctorSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'doctor_id', 'uuid_token', 'user', 'first_name', 'last_name',
             'license_number',
-            'department', 'specialization', 'dob', 'age', 'gender',
+            'department', 'specialization', 'experience_years', 'dob', 'age', 'gender',
             'phone', 'email', 'photo', 'status',
             'availability_schedule', 'registration_date',
             'username', 'password',
@@ -183,7 +183,7 @@ class PublicDoctorSerializer(serializers.ModelSerializer):
         model = Doctor
         fields = (
             'id', 'doctor_id', 'first_name', 'last_name',
-            'department', 'specialization', 'gender', 'photo', 'status',
+            'department', 'specialization', 'experience_years', 'gender', 'photo', 'status',
             'availability_schedule',
         )
         read_only_fields = fields

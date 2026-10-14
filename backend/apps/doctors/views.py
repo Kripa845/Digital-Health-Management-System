@@ -1,3 +1,5 @@
+from datetime import date
+
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from django.db import transaction
@@ -25,6 +27,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 from apps.audit.utils import log_activity
+from apps.appointments.availability import (
+    BOOKING_WINDOW_DAYS, get_available_dates, get_available_slots, local_now,
+)
 
 User = get_user_model()
 
@@ -53,7 +58,7 @@ class DoctorViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     # Verified registration data: only an administrator may change these.
-    ADMIN_ONLY_FIELDS = ('license_number', 'department', 'status')
+    ADMIN_ONLY_FIELDS = ('license_number', 'department', 'status', 'experience_years')
 
     def get_queryset(self):
         user = self.request.user
@@ -123,6 +128,34 @@ class DoctorViewSet(viewsets.ModelViewSet):
         )
         with transaction.atomic():
             user.delete()
+
+    @action(detail=True, methods=['get'], url_path='available-dates',
+            permission_classes=[permissions.IsAuthenticated])
+    def available_dates(self, request, pk=None):
+        """Days in the next BOOKING_WINDOW_DAYS (Kathmandu time) with a free slot."""
+        doctor = self.get_object()
+        return Response({
+            'doctor': doctor.id,
+            'today': local_now().date().isoformat(),
+            'days': BOOKING_WINDOW_DAYS,
+            'dates': [d.isoformat() for d in get_available_dates(doctor)],
+        })
+
+    @action(detail=True, methods=['get'], url_path='available-slots',
+            permission_classes=[permissions.IsAuthenticated])
+    def available_slots(self, request, pk=None):
+        """Free slot start times (HH:MM, Kathmandu time) on ?date=YYYY-MM-DD."""
+        doctor = self.get_object()
+        raw = request.query_params.get('date', '')
+        try:
+            day = date.fromisoformat(raw)
+        except ValueError:
+            return Response({'date': 'Give the date as YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'doctor': doctor.id,
+            'date': day.isoformat(),
+            'slots': [t.strftime('%H:%M') for t in get_available_slots(doctor, day)],
+        })
 
     @action(detail=True, methods=['post'], url_path='reset_password', permission_classes=[IsAdmin])
     def reset_password(self, request, pk=None):
@@ -338,7 +371,7 @@ class AccessRequestViewSet(viewsets.ModelViewSet):
                 message=f"Dr. {doctor.user.get_full_name() or doctor.user.username} requested access to patient {patient.patient_id}.",
             )
         log_activity(request.user, 'ACCESS_REQUEST',
-                     f"Requested access to patient {patient.patient_id}.", request)
+                     f"Requested access to patient {patient.patient_id}.", request, patient=patient)
 
         serializer = self.get_serializer(access)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

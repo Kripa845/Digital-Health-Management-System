@@ -74,7 +74,8 @@ class AppointmentWorkflowTests(TestCase):
         r = self.client.post('/api/v1/appointments/', {
             'doctor': self.doctor.id, 'appointment_date': str(self.day), 'appointment_time': '10:00',
         }, format='json')
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.data['code'], 'slot_taken')
 
     def test_outside_doctor_hours_rejected(self):
         r = self._book(appointment_time='18:30')

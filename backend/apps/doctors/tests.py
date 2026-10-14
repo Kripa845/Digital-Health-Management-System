@@ -92,3 +92,39 @@ class DoctorAccessRuleTests(TestCase):
         self.client.force_authenticate(self.admin)
         self.client.post(f'/api/v1/access-requests/{req.id}/approve/')
         self.assertTrue(Notification.objects.filter(receiver=self.patient.user, role='PATIENT').exists())
+
+
+class DoctorExperienceTests(TestCase):
+    def setUp(self):
+        self.doctor = make_doctor()
+        self.admin = APIClient()
+        self.admin.force_authenticate(make_admin())
+
+    def test_admin_sets_experience(self):
+        r = self.admin.patch(f'/api/v1/doctors/{self.doctor.id}/', {'experience_years': 12}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data['experience_years'], 12)
+        self.doctor.refresh_from_db()
+        self.assertEqual(self.doctor.experience_years, 12)
+
+    def test_defaults_to_zero_and_is_shown_publicly(self):
+        self.assertEqual(self.doctor.experience_years, 0)
+        patient = make_patient()
+        client = APIClient()
+        client.force_authenticate(patient.user)
+        data = client.get('/api/v1/doctors/').data
+        rows = data['results'] if isinstance(data, dict) else data
+        self.assertEqual(rows[0]['experience_years'], 0)
+
+    def test_negative_experience_rejected(self):
+        r = self.admin.patch(f'/api/v1/doctors/{self.doctor.id}/', {'experience_years': -1}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('experience_years', r.data)
+
+    def test_doctor_cannot_change_own_experience(self):
+        client = APIClient()
+        client.force_authenticate(self.doctor.user)
+        r = client.patch(f'/api/v1/doctors/{self.doctor.id}/', {'experience_years': 40}, format='json')
+        self.assertEqual(r.status_code, 403)
+        self.doctor.refresh_from_db()
+        self.assertEqual(self.doctor.experience_years, 0)

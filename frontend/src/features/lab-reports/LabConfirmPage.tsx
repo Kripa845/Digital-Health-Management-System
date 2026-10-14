@@ -1,37 +1,14 @@
-import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CheckCircle2, ClipboardCheck, FileText, ShieldAlert, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState, PageHeader } from '@/components/patterns'
 import { Skeleton } from '@/components/ui/misc'
-import { apiErrorBody, labReportService } from '@/lib/api'
+import { apiErrorBody } from '@/lib/api'
 import { LabReportPreview } from './LabReportPreview'
 import { ReportStatusBadge } from './LabStatusBadge'
+import { ReportScan } from './ReportScan'
 import { useLabReport } from './hooks'
-
-/** Shows the uploaded file itself, fetched through the authenticated download endpoint. */
-function DocumentPreview({ id, type }: { id: number; type?: string }) {
-  const [url, setUrl] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    let objectUrl: string | null = null
-    labReportService.download(id)
-      .then((blob) => {
-        const mime = type === 'PDF' ? 'application/pdf' : type === 'PNG' ? 'image/png' : 'image/jpeg'
-        objectUrl = URL.createObjectURL(new Blob([blob], { type: mime }))
-        setUrl(objectUrl)
-      })
-      .catch(() => setFailed(true))
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [id, type])
-
-  if (failed) return <p className="p-4 text-sm text-muted-foreground">The report file could not be shown.</p>
-  if (!url) return <Skeleton className="h-[480px] w-full" />
-  return type === 'PDF'
-    ? <iframe src={url} title="Uploaded report" className="h-[560px] w-full rounded-[var(--radius-md)] border border-border bg-white" />
-    : <img src={url} alt="Uploaded report" className="w-full rounded-[var(--radius-md)] border border-border bg-white" />
-}
 
 export function LabConfirmPage() {
   const { id } = useParams()
@@ -70,13 +47,14 @@ export function LabConfirmPage() {
           <Card className="min-w-0">
             <CardContent className="space-y-2 p-4">
               <p className="flex items-center gap-1.5 text-sm font-semibold"><FileText className="size-4" />Your report</p>
-              <DocumentPreview id={report.id} type={report.file_type} />
+              <ReportScan id={report.id} type={report.file_type} />
             </CardContent>
           </Card>
           <Card className="min-w-0">
             <CardContent className="p-4">
               <LabReportPreview
                 report={report}
+                showScan={false}
                 onConfirmed={() => navigate('/patient/dashboard')}
                 onDiscarded={() => navigate('/patient/lab-reports')}
               />
@@ -91,7 +69,7 @@ export function LabConfirmPage() {
                 This report is being checked by the care team. You'll be able to confirm it once they have.</p>
             )}
             {report.status === 'SAVED_NO_VALUES' && (
-              <p className="text-sm text-muted-foreground">Saved as a document. It has no health card values, so the dashboard did not change.</p>
+              <p className="text-sm text-muted-foreground">Saved as a document. No health card values were found.</p>
             )}
             {report.status === 'CONFIRMED' && (
               <p className="flex items-start gap-2 text-sm"><CheckCircle2 className="mt-0.5 size-4 text-success" />

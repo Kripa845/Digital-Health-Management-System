@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  UserCircle, Mail, CalendarClock, Pencil, X, Save,
+  UserCircle, CalendarClock, Pencil, X, Save,
 } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -245,10 +245,6 @@ export function DoctorProfile() {
                 <InfoRow label="Phone" value={doc.phone} mono />
               </dl>
             )}
-            <div className="flex items-center gap-2 rounded-[var(--radius-md)] bg-surface-2/60 p-3 text-xs text-muted-foreground">
-              <Mail className="size-4 shrink-0" />
-              Keep your contact details current so patients and admins can reach you.
-            </div>
           </CardContent>
         </Card>
       </div>

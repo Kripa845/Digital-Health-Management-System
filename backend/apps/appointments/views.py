@@ -2,12 +2,12 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.db.models import Count
 
 from apps.appointments.models import Appointment
-from apps.appointments.serializers import AppointmentSerializer
+from apps.appointments.serializers import AppointmentSerializer, SlotTaken
 from apps.notifications.models import Notification
 from apps.audit.utils import log_activity
 
@@ -71,14 +71,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return Appointment.objects.none()
 
     def create(self, request, *args, **kwargs):
+        # The serializer re-validates the slot; the unique_active_doctor_slot
+        # constraint settles a race between two requests that both passed it.
         try:
-            return super().create(request, *args, **kwargs)
+            with transaction.atomic():
+                return super().create(request, *args, **kwargs)
         except IntegrityError:
-            # Two requests raced for the same slot; the database constraint won.
-            return Response(
-                {'non_field_errors': ['This time slot is already booked for the selected doctor.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            exc = SlotTaken()
+            return Response(exc.detail, status=exc.status_code)
 
     def perform_create(self, serializer):
         appointment = serializer.save()

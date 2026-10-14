@@ -113,6 +113,7 @@ type DoctorForm = {
   license_number: string
   department: string
   specialization: string
+  experience_years: string
   dob: string
   gender: string
   phone: string
@@ -122,7 +123,7 @@ type DoctorForm = {
 
 const EMPTY_DOCTOR: DoctorForm = {
   first_name: '', last_name: '', license_number: '', department: 'General Medicine',
-  specialization: '', dob: '', gender: 'Male', phone: '', email: '', status: 'Active',
+  specialization: '', experience_years: '0', dob: '', gender: 'Male', phone: '', email: '', status: 'Active',
 }
 
 function toDoctorForm(d: Doctor): DoctorForm {
@@ -132,6 +133,7 @@ function toDoctorForm(d: Doctor): DoctorForm {
     license_number: d.license_number ?? '',
     department: d.department ?? 'General Medicine',
     specialization: d.specialization ?? '',
+    experience_years: String(d.experience_years ?? 0),
     dob: d.dob ?? '',
     gender: d.gender ?? 'Male',
     phone: d.phone ?? '',
@@ -151,6 +153,7 @@ function validateDoctor(f: DoctorForm): Record<string, string> {
   if (!f.license_number.trim()) e.license_number = 'NMC number is required.'
   else if (!NMC_RE.test(f.license_number.trim())) e.license_number = 'Enter a valid NMC number, e.g. NMC-12345.'
   if (!f.specialization.trim()) e.specialization = 'Specialization is required.'
+  if (!/^\d{1,2}$/.test(f.experience_years.trim())) e.experience_years = 'Enter whole years, from 0 to 99.'
   if (!f.dob) e.dob = 'Date of birth is required.'
   else if (new Date(f.dob) > new Date()) e.dob = 'Date of birth cannot be in the future.'
   if (!NEPAL_PHONE.test(f.phone)) e.phone = 'Must start with 98 or 97 and be 10 digits.'
@@ -264,9 +267,16 @@ function DoctorFormDialog({
             </Field>
           </div>
 
-          <Field label="Specialization" required error={errors.specialization}>
-            <Input value={form.specialization} onChange={(e) => set('specialization', e.target.value)} />
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Specialization" required error={errors.specialization} className="sm:col-span-2">
+              <Input value={form.specialization} onChange={(e) => set('specialization', e.target.value)} />
+            </Field>
+            <Field label="Experience (years)" htmlFor="doctor-experience" error={errors.experience_years}
+              hint="Used when ranking doctors for the symptom checker.">
+              <Input id="doctor-experience" type="number" inputMode="numeric" min={0} max={99} step={1}
+                value={form.experience_years} onChange={(e) => set('experience_years', e.target.value)} />
+            </Field>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Date of birth" required error={errors.dob}>
@@ -647,6 +657,7 @@ function DoctorDetailsDialog({
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
                   <DField label="Department" value={d.department} />
                   <DField label="Specialization" value={d.specialization} />
+                  <DField label="Experience" value={`${d.experience_years ?? 0} years`} />
                   <DField label="NMC number" value={d.license_number} />
                 </dl>
               </section>
@@ -659,6 +670,7 @@ function DoctorDetailsDialog({
                   <DField label="Gender" value={d.gender} />
                   <DField label="Phone" value={d.phone} />
                   <DField label="Email" value={d.email} />
+                  <DField label="Username" value={d.login_username ?? d.user?.username} />
                 </dl>
               </section>
 

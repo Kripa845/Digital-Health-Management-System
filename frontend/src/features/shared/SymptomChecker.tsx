@@ -10,22 +10,24 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/misc'
 import { recommendationService } from '@/lib/api'
-import type { Recommendation, SmartCheckResult, SmartCheckStatus } from '@/lib/types'
+import type { Recommendation, SmartCheckResult } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { AssignDoctorButton } from './AssignDoctorButton'
 
 const PAIN_HINTS = ['No pain', 'Mild', 'Uncomfortable', 'Distressing', 'Intense', 'Severe']
 const DISCLAIMER = 'Suggestion only, not a medical diagnosis.'
 
-/** Shown when the smart check is not confident and the keyword match is used instead. */
-const FALLBACK_MESSAGES: Record<Exclude<SmartCheckStatus, 'ok'>, string> = {
-  not_enough_info: "We need a little more information. Please add more symptoms (at least two) for a more specific suggestion. Here is a general match based on what you wrote.",
-  low_confidence: "These symptoms could point to several areas. Adding more symptoms will help. Here is a general match based on what you wrote.",
-  model_unavailable: 'The smart check is not available right now. Here is a general match based on what you wrote.',
-}
+/** Shown when the smart check is unavailable and the keyword match is used instead. */
+const UNAVAILABLE_MESSAGE = 'The smart check is not available right now. Here is a general match based on what you wrote.'
 
 const pct = (p: number) => `${Math.round(p * 100)}%`
 
-export function SymptomChecker({ compact = false, patientId }: { compact?: boolean; patientId?: number }) {
+/** Passing ``assignTo`` (admins, with a chosen patient) adds an Assign button to each recommended doctor. */
+export function SymptomChecker({ compact = false, patientId, assignTo }: {
+  compact?: boolean
+  patientId?: number
+  assignTo?: { id: number; name: string }
+}) {
   const [symptoms, setSymptoms] = useState('')
   const [pain, setPain] = useState(4)
   const [age, setAge] = useState<number | ''>(30)
@@ -43,21 +45,21 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
     if (!age || age < 1 || age > 120) return toast.error('Enter an age between 1 and 120.')
     setLoading(true); setResult(null); setSmart(null); setFallbackNote('')
     try {
-      // 1. Smart check (Naive Bayes + TOPSIS).
-      let smartStatus: SmartCheckStatus = 'model_unavailable'
+      // 1. Smart check (red flags + Random Forest + TOPSIS). Follow-up questions are only asked
+      //    on the full symptom checker page; here an unsure result uses the keyword match.
+      //    "Not enough information" results suggest General Medicine; unclear spellings are listed.
       try {
         const smartResult = await recommendationService.smartCheck({ text: symptoms, patient_id: patientId })
-        if (smartResult.status === 'ok') {
-          setSmart(smartResult)
-          toast.success('We found a care suggestion for you.')
+        if (smartResult.status !== 'model_unavailable') {
+          setSmart(smartResult)            // an emergency is never replaced by a keyword match
+          if (smartResult.status === 'ok') toast.success('We found a care suggestion for you.')
           return
         }
-        smartStatus = smartResult.status
       } catch {
         // Smart check failed (e.g. server error): use the keyword match below.
       }
       // 2. Fallback: the existing keyword-based match.
-      setFallbackNote(FALLBACK_MESSAGES[smartStatus])
+      setFallbackNote(UNAVAILABLE_MESSAGE)
       const data = await recommendationService.create({
         symptoms, pain_level: pain, age: Number(age), medical_history: history, patient_id: patientId,
       })
@@ -78,7 +80,7 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
       <Card className={cn(compact && 'border-0 shadow-none bg-transparent')}>
         <CardContent className={cn('p-6', compact && 'p-0')}>
           <form onSubmit={submit} className="space-y-5">
-            <Field label="What are you feeling?" htmlFor="symptoms" hint="Describe your symptoms in your own words — e.g. “sharp chest pain and shortness of breath when I climb stairs.”">
+            <Field label="What are you feeling?" htmlFor="symptoms" hint="e.g. “fever, cough, no shortness of breath”">
               <Textarea
                 id="symptoms"
                 value={symptoms}
@@ -128,7 +130,15 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
-              <SmartResultCard result={smart} />
+              {smart.status === 'emergency' ? (
+                <div role="alert" className="space-y-2 rounded-[var(--radius-md)] border border-danger/40 bg-danger-soft p-5 text-sm text-danger">
+                  <p className="flex items-center gap-2 font-display text-lg font-semibold"><TriangleAlert className="size-5 shrink-0" />Seek emergency care now</p>
+                  <p className="text-pretty">{smart.message}</p>
+                  <ul className="list-disc space-y-0.5 pl-5">
+                    {(smart.red_flags ?? []).map((f) => <li key={f.id}>{f.message}</li>)}
+                  </ul>
+                </div>
+              ) : <SmartResultCard result={smart} assignTo={assignTo} />}
             </motion.div>
           ) : result ? (
             <motion.div
@@ -170,7 +180,7 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
                       <p className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">Suggested clinicians</p>
                       {result.ranked_doctors.map((doc, i) => (
                         <div key={doc.id ?? i} className={cn(
-                          'flex items-center gap-3 rounded-[var(--radius-md)] border p-3',
+                          'flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border p-3',
                           i === 0 ? 'border-primary/30 bg-primary-soft/30' : 'border-border',
                         )}>
                           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-2 text-muted-foreground">
@@ -181,6 +191,10 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
                             <p className="truncate text-xs text-muted-foreground">{doc.specialization} · {doc.department}</p>
                           </div>
                           {i === 0 && <Badge variant="success">Best match</Badge>}
+                          {assignTo && doc.id != null && (
+                            <AssignDoctorButton doctorId={doc.id} doctorName={`${doc.first_name} ${doc.last_name}`}
+                              patientId={assignTo.id} patientName={assignTo.name} />
+                          )}
                         </div>
                       ))}
                     </div>
@@ -201,9 +215,6 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
                 <Activity className="size-7" />
               </span>
               <p className="font-medium">Your care match appears here</p>
-              <p className="max-w-xs text-sm text-muted-foreground text-pretty">
-                Describe how you're feeling and we'll point you to the right department and clinician.
-              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -214,17 +225,30 @@ export function SymptomChecker({ compact = false, patientId }: { compact?: boole
 
 
 /** Result of the smart check: likely area, possible illnesses and TOPSIS-ranked doctors. */
-function SmartResultCard({ result }: { result: SmartCheckResult }) {
+function SmartResultCard({ result, assignTo }: { result: SmartCheckResult; assignTo?: { id: number; name: string } }) {
   const deptPct = Math.round((result.dept_probability ?? 0) * 100)
+  const sure = result.status === 'ok'
+  const confirm = result.status === 'needs_confirmation'
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-border bg-primary-soft/50 p-6">
         <div className="flex items-center justify-between">
           <Badge variant="primary"><BrainCircuit />Smart check</Badge>
-          <span className="text-xs font-medium text-muted-foreground">{deptPct}% likely</span>
+          {sure && <span className="text-xs font-medium text-muted-foreground">{deptPct}% likely</span>}
         </div>
-        <p className="mt-3 font-display text-2xl font-semibold">Likely area: {result.department} ({deptPct}%)</p>
-        <Progress value={deptPct} className="mt-3" />
+        {sure ? (
+          <>
+            <p className="mt-3 font-display text-2xl font-semibold">Likely area: {result.department} ({deptPct}%)</p>
+            <Progress value={deptPct} className="mt-3" />
+          </>
+        ) : confirm ? (
+          <p className="mt-3 font-display text-2xl font-semibold">Please check the spelling</p>
+        ) : (
+          <>
+            <p className="mt-3 font-display text-2xl font-semibold">Not enough information: {result.department}</p>
+            {result.message && <p className="mt-2 text-sm text-muted-foreground text-pretty">{result.message}</p>}
+          </>
+        )}
         <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-warning">
           <TriangleAlert className="size-3.5 shrink-0" />{result.disclaimer || DISCLAIMER}
         </p>
@@ -233,6 +257,25 @@ function SmartResultCard({ result }: { result: SmartCheckResult }) {
         {result.symptoms.length > 0 && (
           <p className="text-sm text-muted-foreground text-pretty">
             Symptoms recognised: <span className="font-medium text-foreground">{result.symptoms.join(', ')}</span>
+          </p>
+        )}
+        {!!result.unrecognized?.length && (
+          <p className="text-sm text-warning text-pretty">
+            We didn't recognise: {result.unrecognized.map((u) => `“${u}”`).join(', ')}.
+          </p>
+        )}
+        {confirm && (
+          <ul className="space-y-1 text-sm">
+            {(result.suggestions ?? []).map((sg) => (
+              <li key={sg.term}>
+                Did you mean <span className="font-medium">{sg.label}</span> for “{sg.term}”? Correct the word and check again.
+              </li>
+            ))}
+          </ul>
+        )}
+        {result.safety_net && (
+          <p className="flex items-start gap-1.5 text-sm text-warning text-pretty">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{result.safety_net}
           </p>
         )}
 
@@ -250,12 +293,12 @@ function SmartResultCard({ result }: { result: SmartCheckResult }) {
           </div>
         )}
 
-        <div className="space-y-2">
+        {!confirm && <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">Suggested clinicians</p>
           {result.doctors_note && <p className="text-xs text-muted-foreground text-pretty">{result.doctors_note}</p>}
           {result.doctors?.map((doc, i) => (
             <div key={doc.id} className={cn(
-              'flex items-center gap-3 rounded-[var(--radius-md)] border p-3',
+              'flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border p-3',
               i === 0 ? 'border-primary/30 bg-primary-soft/30' : 'border-border',
             )}>
               <span className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-2 text-muted-foreground">
@@ -267,9 +310,12 @@ function SmartResultCard({ result }: { result: SmartCheckResult }) {
                 <p className="truncate text-xs text-subtle-foreground">{doc.reason}</p>
               </div>
               {i === 0 && <Badge variant="success">Best match</Badge>}
+              {assignTo && (
+                <AssignDoctorButton doctorId={doc.id} doctorName={doc.name} patientId={assignTo.id} patientName={assignTo.name} />
+              )}
             </div>
           ))}
-        </div>
+        </div>}
       </CardContent>
     </Card>
   )

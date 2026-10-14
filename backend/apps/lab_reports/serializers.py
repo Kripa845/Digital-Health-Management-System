@@ -13,6 +13,13 @@ _SIGNATURES = {
 
 
 class LabReportFieldSerializer(serializers.ModelSerializer):
+    # Clinical, against the range printed on the report's own row: 'low', 'normal', 'high'
+    # or null (no range read). Separate from needs_confirmation / confirmation_reasons,
+    # which say the value may have been MISREAD.
+    reference_flag = serializers.SerializerMethodField(read_only=True)
+    # 'read' or 'not_read': a missing range is shown as such, never replaced by a default.
+    range_status = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = LabReportField
         fields = (
@@ -28,8 +35,27 @@ class LabReportFieldSerializer(serializers.ModelSerializer):
             'change_status',
             'skip_reason',
             'flag',
+            'ocr_confidence',
+            'needs_confirmation',
+            'confirmation_reasons',
+            'suggested_value',
+            'reference_flag',
+            'range_status',
         )
         read_only_fields = fields
+
+    def get_reference_flag(self, obj):
+        from apps.lab_reports.services.review import DECIMAL_POINT, reference_flag
+        # The range is in the printed unit: compare the printed reading, or the corrected
+        # one when the reading was auto-corrected (the correction is in the printed unit).
+        corrected = next((r.get('value') for r in obj.confirmation_reasons or []
+                          if r.get('code') == DECIMAL_POINT and r.get('value')), None)
+        if obj.suggested_value and not corrected:
+            return None
+        return reference_flag(corrected or obj.extracted_value, obj.reference_range)
+
+    def get_range_status(self, obj):
+        return 'read' if obj.reference_range else 'not_read'
 
 
 class LabReportSerializer(serializers.ModelSerializer):
@@ -158,7 +184,9 @@ class LabReportSerializer(serializers.ModelSerializer):
         # Values only. Identity details read from the report (name, date of
         # birth, ID) are shown to admins in the review queue, not here.
         data = obj.extracted_json or {}
-        return {k: data.get(k) for k in ('report_date', 'blood_group', 'tests', 'other_tests')}
+        out = {k: data.get(k) for k in ('report_date', 'blood_group', 'tests', 'other_tests')}
+        out['unmatched_rows'] = data.get('unmatched_rows') or []      # not recognised; never saved
+        return out
 
     def get_detected_fields(self, obj):
         return LabReportFieldSerializer(obj.fields.all(), many=True).data
@@ -238,6 +266,8 @@ class ConfirmSerializer(serializers.Serializer):
                                    required=False, default=dict)
     accept_flagged = serializers.ListField(child=serializers.CharField(max_length=50),
                                            required=False, default=list)
+    # Values needing confirmation that the user checked against the scan; others are not saved.
+    confirmed = serializers.ListField(child=serializers.CharField(max_length=50), required=False, default=list)
     # Required (true) to confirm a report older than the latest confirmed one (policy "warn").
     acknowledge_older_report = serializers.BooleanField(required=False, default=False)
 

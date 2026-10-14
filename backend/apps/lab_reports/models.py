@@ -208,6 +208,13 @@ class LabReportField(models.Model):
     # Machine-readable reason (out_of_range, unknown_unit, invalid,
     # blood_group_conflict, too_large); out_of_range values can be accepted on confirm.
     flag = models.CharField(max_length=24, blank=True)
+    # OCR confidence (0–100) of the word(s) this value was read from (see services/review.py).
+    ocr_confidence = models.FloatField(null=True, blank=True)
+    # The value must be confirmed by the user before it is saved; why, as [{code, message}].
+    needs_confirmation = models.BooleanField(default=False)
+    confirmation_reasons = models.JSONField(default=list, blank=True)
+    # A plausible reading suggested for a value that lost its decimal point (dashboard unit).
+    suggested_value = models.CharField(max_length=50, blank=True)
 
     def __str__(self):
         return f"{self.field_name}: {self.extracted_value} ({self.change_status})"

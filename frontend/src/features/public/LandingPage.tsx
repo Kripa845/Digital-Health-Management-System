@@ -1,481 +1,241 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  Menu, X, ArrowRight, ShieldCheck, QrCode, CalendarDays,
-  FileText, HeartPulse,  ChevronDown, Lock, 
-  Activity,
+  ArrowRight, ShieldCheck, QrCode, CalendarDays, Activity,
+  BadgeCheck, Phone, Mail, MapPin, Siren,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Wordmark, Logo } from '@/components/brand'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { SymptomChecker } from '@/features/shared/SymptomChecker'
 import { cn } from '@/lib/utils'
+import heroImg from '@/assets/landing/hero-illustration.webp'
 
-const NAV_LINKS = [
-  { label: 'Features', href: '#features' },
-  { label: 'How it works', href: '#how' },
-  { label: 'Symptom checker', href: '#checker' },
-  { label: 'FAQ', href: '#faq' },
-]
+const EMERGENCY_NUMBER = '102'
+
+const fadeUp = {
+  initial: { opacity: 0, y: 18 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: '-60px' },
+  transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
+}
+
+function Eyebrow({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary-soft-foreground', className)}>
+      {children}
+    </span>
+  )
+}
 
 function PublicNav() {
-  const [open, setOpen] = useState(false)
   return (
-    <header className="sticky top-0 z-50 border-b border-border/70 glass">
+    <header className="sticky top-0 z-50 border-b border-border/60 glass">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link to="/"><Wordmark /></Link>
-        <nav className="hidden items-center gap-1 md:flex">
-          {NAV_LINKS.map((l) => (
-            <a key={l.href} href={l.href} className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              {l.label}
-            </a>
-          ))}
-        </nav>
         <div className="flex items-center gap-1.5">
           <ThemeToggle />
-          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex"><Link to="/login">Sign in</Link></Button>
-          <Button asChild size="sm" className="hidden sm:inline-flex"><a href="#checker">Try it free</a></Button>
-          <button className="rounded-md p-2 text-muted-foreground md:hidden" onClick={() => setOpen((v) => !v)} aria-label="Menu">
-            {open ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
+          <Button asChild variant="ghost" size="sm" className="hidden rounded-full sm:inline-flex"><Link to="/login">Sign in</Link></Button>
+          <Button asChild size="sm" className="rounded-full"><Link to="/login">Get started</Link></Button>
         </div>
       </div>
-      {open && (
-        <div className="border-t border-border px-4 pb-4 md:hidden">
-          <nav className="flex flex-col gap-1 pt-2">
-            {NAV_LINKS.map((l) => (
-              <a key={l.href} href={l.href} onClick={() => setOpen(false)} className="rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-surface-2">{l.label}</a>
-            ))}
-            <Button asChild className="mt-2"><Link to="/login">Sign in</Link></Button>
-          </nav>
-        </div>
-      )}
     </header>
   )
 }
 
-// function HealthCardVisual() {
-//   return (
-//     <motion.div
-//       initial={{ opacity: 0, y: 24, rotateX: 8 }}
-//       animate={{ opacity: 1, y: 0, rotateX: 0 }}
-//       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
-//       className="relative mx-auto w-full max-w-sm"
-//       style={{ perspective: 1000 }}
-//     >
-//       {/* Floating accents */}
-//       <motion.div
-//         aria-hidden
-//         animate={{ y: [0, -10, 0] }}
-//         transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-//         className="absolute -right-5 -top-5 z-10 rounded-[var(--radius-lg)] border border-border bg-surface p-3 shadow-[var(--shadow-md)]"
-//       >
-//         <div className="flex items-center gap-2">
-//           <span className="grid size-8 place-items-center rounded-full bg-success-soft text-success"><ShieldCheck className="size-4" /></span>
-//           <div>
-//             <p className="text-[11px] font-semibold leading-tight">Verified</p>
-//             <p className="text-[10px] leading-tight text-subtle-foreground">Secure UUID</p>
-//           </div>
-//         </div>
-//       </motion.div>
-//       <motion.div
-//         aria-hidden
-//         animate={{ y: [0, 12, 0] }}
-//         transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-//         className="absolute -bottom-6 -left-6 z-10 rounded-[var(--radius-lg)] border border-border bg-surface p-3 shadow-[var(--shadow-md)]"
-//       >
-//         <div className="flex items-center gap-2">
-//           <span className="grid size-8 place-items-center rounded-full bg-primary-soft text-primary-soft-foreground"><HeartPulse className="size-4" /></span>
-//           <div>
-//             <p className="text-[11px] font-semibold leading-tight">A+ · O.K.</p>
-//             <p className="text-[10px] leading-tight text-subtle-foreground">Blood group on file</p>
-//           </div>
-//         </div>
-//       </motion.div>
-
-//       {/* The card */}
-//       <div className="relative overflow-hidden rounded-[var(--radius-2xl)] border border-border bg-gradient-to-br from-surface to-surface-2 p-6 shadow-[var(--shadow-lg)]">
-//         <div className="absolute -right-16 -top-16 size-48 rounded-full bg-primary/10 blur-2xl" />
-//         <div className="relative flex items-start justify-between">
-//           <div>
-//             <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Digital Health Card</p>
-//             <p className="font-display text-lg font-semibold">Aayush Sharma</p>
-//           </div>
-//           <Logo className="size-9" />
-//         </div>
-//         <div className="relative mt-6 flex items-center gap-5">
-//           <div className="grid size-24 place-items-center rounded-[var(--radius-md)] border border-border bg-surface p-2">
-//             <QrCode className="size-full text-foreground" strokeWidth={1} />
-//           </div>
-//           <div className="flex-1 space-y-2.5">
-//             <div>
-//               <p className="text-[10px] uppercase tracking-wide text-subtle-foreground">Patient ID</p>
-//               <p className="font-mono text-sm font-medium">PAT-1A2B3C4D</p>
-//             </div>
-//             <div>
-//               <p className="text-[10px] uppercase tracking-wide text-subtle-foreground">Emergency</p>
-//               <p className="font-mono text-sm font-medium">+977 98•• ••7788</p>
-//             </div>
-//             <Badge variant="success" className="mt-1">Active</Badge>
-//           </div>
-//         </div>
-//         <div className="relative mt-5 flex items-center justify-between border-t border-border pt-4 text-xs text-muted-foreground">
-//           <span>Scan for emergency identity</span>
-//           <span className="font-mono">mero.care</span>
-//         </div>
-//       </div>
-//     </motion.div>
-//   )
-// }
-function HealthCardVisual() {
+function HeroVisual() {
   return (
-    <div className="mx-auto w-full max-w-md">
-      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+      className="relative mx-auto w-full max-w-md lg:max-w-none"
+    >
+      <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-primary-soft via-surface-2 to-primary-soft px-6 pb-0 pt-14 shadow-[var(--shadow-lg)] sm:px-10">
+        <img
+          src={heroImg}
+          alt="Doctor consulting a patient through a phone"
+          className="mx-auto aspect-[849/927] w-full max-w-md object-contain"
+          loading="eager"
+        />
+      </div>
 
-        <div className="flex items-center justify-between border-b border-border pb-5">
+      {/* Floating: next appointment */}
+      <motion.div
+        animate={{ y: [0, -8, 0] }}
+        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -left-3 top-8 flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 shadow-[var(--shadow-md)] sm:-left-8"
+      >
+        <span className="grid size-9 place-items-center rounded-xl bg-primary-soft text-primary"><CalendarDays className="size-4" /></span>
+        <div>
+          <p className="text-[11px] leading-tight text-subtle-foreground">Next appointment</p>
+          <p className="text-sm font-semibold leading-tight">Today, 2:30 PM</p>
+        </div>
+      </motion.div>
+
+      {/* Floating: status pill */}
+      <div className="absolute right-4 top-4 flex items-center gap-2 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background shadow-[var(--shadow-md)]">
+        <span className="size-1.5 rounded-full bg-primary" />
+        Emergency QR ready
+      </div>
+
+      {/* Floating: CTA pill */}
+      <Link
+        to="/login"
+        className="absolute -right-2 top-[42%] flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-glow)] transition-transform hover:scale-[1.03] sm:-right-6"
+      >
+        <CalendarDays className="size-4" />
+        Book now
+      </Link>
+
+      {/* Floating: mini health card */}
+      <motion.div
+        animate={{ y: [0, 8, 0] }}
+        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
+        className="absolute -bottom-6 right-4 w-56 rounded-2xl border border-border bg-surface p-4 shadow-[var(--shadow-lg)] sm:-right-4"
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Health card</p>
+          <Logo className="size-6" />
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <span className="grid size-12 place-items-center rounded-lg border border-border bg-background">
+            <QrCode className="size-8" strokeWidth={1.3} />
+          </span>
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-primary">
-              Mero Care Card
+            <p className="font-mono text-xs font-medium">PAT-1A2B3C4D</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-success">
+              <span className="size-1.5 rounded-full bg-success" />Active
             </p>
-
-            <h3 className="mt-1 text-xl font-semibold">
-              Digital Health Card
-            </h3>
-          </div>
-
-          <Logo className="size-10" />
-        </div>
-
-        <div className="mt-6 flex gap-5">
-          <div className="flex size-28 shrink-0 items-center justify-center rounded-xl border border-border bg-background">
-            <QrCode
-              className="size-20 text-foreground"
-              strokeWidth={1.3}
-            />
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs text-muted-foreground">
-                Patient
-              </p>
-
-              <p className="font-medium">
-                Aayush Sharma
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs text-muted-foreground">
-                Patient ID
-              </p>
-
-              <p className="font-mono text-sm">
-                PAT-1A2B3C4D
-              </p>
-            </div>
           </div>
         </div>
-
-        <div className="mt-6 border-t border-border pt-5">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              Emergency contact
-            </span>
-
-            <span className="font-medium">
-              +977 98•• ••7788
-            </span>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              Status
-            </span>
-
-            <span className="font-medium text-green-600">
-              Active
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-lg bg-muted/50 px-4 py-3 text-center text-xs text-muted-foreground">
-          Scan the QR code to access emergency identity information
-        </div>
-
-      </div>
-    </div>
-  )
-}
-
-// const FEATURES = [
-//   { icon: QrCode, title: 'Scannable health card', body: 'Every patient carries a QR card that reveals identity essentials in an emergency — never their private records.' },
-//   { icon: HeartPulse, title: 'Guided doctor matching', body: 'Describe symptoms in plain words; a transparent scoring engine routes you to the right department and clinician.' },
-//   { icon: ShieldCheck, title: 'Role-based privacy', body: 'Patients, doctors, and admins each see exactly what they should — enforced on every request, not just the screen.' },
-//   { icon: CalendarDays, title: 'Appointments that flow', body: 'Request, accept, complete — a clear lifecycle with notifications, so nothing slips between visits.' },
-//   { icon: FileText, title: 'Records, organised', body: 'Prescriptions and reports kept tidy, versioned, and downloadable — protected behind granular permissions.' },
-//   { icon: Lock, title: 'Secure by default', body: 'JWT sessions, email two-factor sign-in, audit trails, and OTP recovery keep every account safe.' },
-// ]
-const FEATURES = [
-  {
-    icon: QrCode,
-    title: 'Digital health card',
-    body: 'Get a unique QR-based health card that can provide essential patient information during emergencies.',
-  },
-  {
-    icon: HeartPulse,
-    title: 'Doctor recommendation',
-    body: 'Enter your symptoms and receive recommendations for the appropriate department and doctor.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Privacy and security',
-    body: 'Patient information is protected using authentication, role-based access and secure API requests.',
-  },
-  {
-    icon: CalendarDays,
-    title: 'Appointments',
-    body: 'Request appointments, check their status and manage your upcoming consultations.',
-  },
-  {
-    icon: FileText,
-    title: 'Medical reports',
-    body: 'Keep prescriptions, laboratory reports and other medical documents organised in one place.',
-  },
-  {
-    icon: Lock,
-    title: 'Secure login',
-    body: 'Protect your account with secure authentication and email-based verification.',
-  },
-]
-
-const STEPS = [
-  { n: '01', title: 'Get your card', body: 'Your clinic registers you and issues a secure digital health card with a unique QR identity.' },
-  { n: '02', title: 'Share when it matters', body: 'Present your card at reception or in an emergency — care teams see only what they need.' },
-  { n: '03', title: 'Find the right care', body: 'Use the symptom checker to reach the right specialist, then book and track appointments.' },
-]
-
-const FAQS = [
-  { q: 'What is Mero Care Card?', a: 'A secure digital health platform. Each patient gets a scannable QR card for instant, privacy-respecting access to essential medical identity, plus tools for appointments, records, and doctor matching.' },
-  { q: 'Who can see my medical records?', a: 'Only you and the clinicians assigned to your care. A public QR scan reveals identity essentials only — never your allergies, medications, or reports. Access is enforced on the server, per request.' },
-  { q: 'How does doctor matching work?', a: 'You describe your symptoms, pain level, and age. A transparent rule-based engine scores departments and available doctors, and explains why it recommends each match.' },
-  { q: 'Can I edit my own medical record?', a: 'To keep records clinically valid, only administrators edit core profiles. You can upload your own additional reports and manage your appointments.' },
-  { q: 'Is signing in secure?', a: 'Yes. Sign-in uses email two-factor verification, sessions are short-lived and refreshed securely, and password recovery uses single-use OTP codes.' },
-]
-
-function FaqItem({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="rounded-[var(--radius-md)] border border-border bg-surface">
-      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left">
-        <span className="font-medium">{q}</span>
-        <ChevronDown className={cn('size-5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
-      </button>
-      <div className={cn('grid transition-all duration-300', open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
-        <div className="overflow-hidden">
-          <p className="px-5 pb-4 text-sm text-muted-foreground text-pretty leading-relaxed">{a}</p>
-        </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
 export function LandingPage() {
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="min-h-dvh overflow-x-clip bg-background">
       <PublicNav />
 
       {/* Hero */}
-      {/* <section className="relative overflow-hidden">
-        <div className="absolute inset-0 aurora opacity-70" aria-hidden />
-        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
+      <section className="relative">
+        <div className="absolute inset-x-0 top-0 h-full bg-gradient-to-b from-primary-soft/40 to-transparent" aria-hidden />
+        <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-4 pb-20 pt-12 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-16">
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            className="space-y-7"
+            className="max-w-xl"
           >
-            <Badge variant="primary" className="px-3 py-1"><Sparkles className="size-3.5" />Digital health, built for Nepal</Badge>
-            <h1 className="font-display text-4xl font-semibold leading-[1.05] tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              Your whole health story, in{' '}
-              <span className="text-primary">one gentle card.</span>
+            <Eyebrow>Digital health card for Nepal</Eyebrow>
+            <h1 className="mt-6 text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
+              Your Health,
+              <span className="block text-primary">Always Within Reach</span>
             </h1>
-            <p className="max-w-xl text-lg text-muted-foreground text-pretty leading-relaxed">
-              Mero Care Card gives every patient a secure QR health card, guides them to the right doctor,
-              and keeps records private — so in the moments that matter, the right care is never out of reach.
+            <p className="mt-6 text-lg leading-relaxed text-muted-foreground text-pretty">
+              Your health information, appointments and reports in one secure place.
             </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button asChild size="lg"><a href="#checker">Try the symptom checker <ArrowRight className="size-4" /></a></Button>
-              <Button asChild size="lg" variant="secondary"><a href="#features">See how it works</a></Button>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button asChild size="lg" className="rounded-full px-6">
+                <Link to="/login">Get started <ArrowRight className="size-4" /></Link>
+              </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 text-sm text-muted-foreground">
-              {[[ShieldCheck, 'Private by design'], [Zap, 'Emergency-ready'], [Users, 'For every role']].map(([Icon, t]: any) => (
-                <span key={t} className="flex items-center gap-1.5"><Icon className="size-4 text-primary" />{t}</span>
-              ))}
+            <div className="mt-8 flex flex-wrap gap-2.5">
+              {[
+                [Activity, '24/7 emergency QR'],
+                [BadgeCheck, 'Verified doctors'],
+                [ShieldCheck, 'Private by design'],
+              ].map(([Icon, label]) => {
+                const I = Icon as typeof Activity
+                return (
+                  <span key={label as string} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                    <I className="size-3.5 text-primary" />{label as string}
+                  </span>
+                )
+              })}
             </div>
           </motion.div>
-          <HealthCardVisual />
-        </div>
-      </section> */}
-      {/* Hero */}
-<section className="border-b border-border bg-background">
-  <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
-
-    <div className="max-w-xl">
-      <p className="mb-4 text-sm font-medium text-primary">
-        Digital Healthcare Management System
-      </p>
-
-      <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-        Your health records,
-        <span className="block text-primary">
-          always within reach.
-        </span>
-      </h1>
-
-      <p className="mt-6 text-lg leading-8 text-muted-foreground">
-        Mero Care Card helps patients securely manage their health information,
-        appointments and medical reports while giving healthcare professionals
-        access to the information they need.
-      </p>
-
-      <div className="mt-8 flex flex-wrap gap-3">
-        <Button asChild size="lg">
-          <Link to="/login">
-            Get started
-            <ArrowRight className="size-4" />
-          </Link>
-        </Button>
-
-        <Button asChild size="lg" variant="outline">
-          <a href="#how">
-            Learn how it works
-          </a>
-        </Button>
-      </div>
-
-      <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-muted-foreground">
-        <span className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-primary" />
-          Secure records
-        </span>
-
-        <span className="flex items-center gap-2">
-          <QrCode className="size-4 text-primary" />
-          QR health card
-        </span>
-
-        <span className="flex items-center gap-2">
-          <CalendarDays className="size-4 text-primary" />
-          Easy appointments
-        </span>
-      </div>
-    </div>
-
-    <HealthCardVisual />
-
-  </div>
-</section>
-
-      {/* Features */}
-      <section id="features" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">Everything in one place</p>
-          <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight sm:text-4xl text-balance">A calmer way to run care</h2>
-          <p className="mt-3 text-muted-foreground text-pretty">Thoughtful tools for patients and clinics — designed to feel human, and built to keep data safe.</p>
-        </div>
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f, i) => (
-            <motion.div
-              key={f.title}
-              initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }}
-              transition={{ duration: 0.45, delay: (i % 3) * 0.06 }}
-              className="group rounded-[var(--radius-lg)] border border-border bg-surface p-6 shadow-[var(--shadow-xs)] transition-all hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5"
-            >
-              <span className="grid size-11 place-items-center rounded-[var(--radius-md)] bg-primary-soft text-primary-soft-foreground transition-colors">
-                <f.icon className="size-5.5" />
-              </span>
-              <h3 className="mt-4 font-semibold">{f.title}</h3>
-              <p className="mt-1.5 text-sm text-muted-foreground text-pretty leading-relaxed">{f.body}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section id="how" className="border-y border-border bg-surface/60">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-wide text-primary">Three simple steps</p>
-            <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight sm:text-4xl">From sign-up to the right specialist</h2>
-          </div>
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
-            {STEPS.map((s) => (
-              <div key={s.n} className="relative rounded-[var(--radius-lg)] border border-border bg-surface p-6">
-                <span className="font-display text-4xl font-semibold text-primary/25">{s.n}</span>
-                <h3 className="mt-2 text-lg font-semibold">{s.title}</h3>
-                <p className="mt-1.5 text-sm text-muted-foreground text-pretty leading-relaxed">{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Symptom checker */}
-      <section id="checker" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
-        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.4fr] lg:items-start">
-          <div className="space-y-4 lg:sticky lg:top-24">
-            <Badge variant="info"><Activity className="size-3.5" />Live demo</Badge>
-            <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl text-balance">Not sure who to see?</h2>
-            <p className="text-muted-foreground text-pretty leading-relaxed">
-              Describe how you're feeling in your own words. Our engine weighs your symptoms, pain, age and history,
-              then explains which department and clinician fit best — transparently, with a confidence score.
-            </p>
-            <p className="text-sm text-subtle-foreground">No account needed to try it.</p>
-          </div>
-          <div className="rounded-[var(--radius-xl)] border border-border bg-surface/60 p-4 sm:p-6">
-            <SymptomChecker />
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section id="faq" className="border-t border-border bg-surface/60">
-        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:py-24">
-          <h2 className="text-center font-display text-3xl font-semibold tracking-tight sm:text-4xl">Questions, answered</h2>
-          <div className="mt-10 space-y-3">
-            {FAQS.map((f) => <FaqItem key={f.q} {...f} />)}
+          <div className="px-4 sm:px-8 lg:px-6">
+            <HeroVisual />
           </div>
         </div>
       </section>
 
       {/* Closing CTA */}
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
-        <div className="relative overflow-hidden rounded-[var(--radius-2xl)] border border-border bg-surface p-8 text-center sm:p-14">
-          <div className="absolute inset-0 aurora opacity-70" aria-hidden />
-          <div className="relative">
-            <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl text-balance">
-              Care that's ready when you are
-            </h2>
-            <p className="mx-auto mt-3 max-w-xl text-muted-foreground text-pretty">
-              Sign in to your Mero Care Card, or try the symptom checker to find the right doctor in minutes.
-            </p>
-            <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <Button asChild size="lg"><Link to="/login">Sign in</Link></Button>
-              <Button asChild size="lg" variant="secondary"><a href="#checker">Try the symptom checker</a></Button>
+      <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:pb-24">
+        <motion.div
+          {...fadeUp}
+          className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-[#1f8f5f] to-[#0f6b4a] p-8 text-white sm:p-14"
+        >
+          <svg aria-hidden viewBox="0 0 24 24" className="absolute -right-6 -top-6 size-48 text-white/10" fill="currentColor">
+            <path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z" />
+          </svg>
+          <div className="relative flex flex-col justify-between gap-10 md:flex-row md:items-center">
+            <div className="max-w-lg">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium">
+                <span className="size-1.5 rounded-full bg-white" />Available 24/7
+              </span>
+              <h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight sm:text-5xl">Need medical assistance?</h2>
+              <p className="mt-4 text-white/80 text-pretty">
+                Sign in to book an appointment and view your reports.
+              </p>
+            </div>
+            <div className="flex flex-col gap-5">
+              <Link
+                to="/login"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-[#0f6b4a] shadow-lg transition-transform hover:scale-[1.03]"
+              >
+                Book appointment <ArrowRight className="size-4" />
+              </Link>
+              <a href={`tel:${EMERGENCY_NUMBER}`} className="flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-full bg-white/15"><Siren className="size-4" /></span>
+                <span>
+                  <span className="block text-xs text-white/70">Ambulance (Nepal)</span>
+                  <span className="block font-semibold">{EMERGENCY_NUMBER}</span>
+                </span>
+              </a>
             </div>
           </div>
-        </div>
+        </motion.div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border bg-surface">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-10 sm:flex-row sm:px-6">
-          <Wordmark />
-          <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Mero Care Card. Caring, secure, and yours.</p>
-          <div className="flex gap-4 text-sm">
-            <Link to="/login" className="text-muted-foreground hover:text-foreground">Sign in</Link>
-            <a href="#faq" className="text-muted-foreground hover:text-foreground">FAQ</a>
+      <footer className="bg-[#0f2a22] text-white/70">
+        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.5fr_1fr]">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <Logo className="size-9" />
+              <span className="text-lg font-semibold text-white">Mero Care Card</span>
+            </div>
+            <p className="mt-4 max-w-xs text-sm leading-relaxed">
+              A secure digital health card for patients, doctors and clinics in Nepal.
+            </p>
+            <ul className="mt-5 space-y-2.5 text-sm">
+              <li className="flex items-center gap-2.5"><MapPin className="size-4 text-[#4fd1a5]" />Kathmandu, Nepal</li>
+              <li className="flex items-center gap-2.5"><Mail className="size-4 text-[#4fd1a5]" />Support through your clinic</li>
+            </ul>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">Get started</p>
+            <p className="mt-4 text-sm leading-relaxed">Registered by your clinic? Sign in to get started.</p>
+            <Link
+              to="/login"
+              className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#1f8f5f] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#23a06b]"
+            >
+              Sign in <ArrowRight className="size-4" />
+            </Link>
+            <a href={`tel:${EMERGENCY_NUMBER}`} className="mt-5 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+              <span className="grid size-9 place-items-center rounded-full bg-white/10 text-[#4fd1a5]"><Phone className="size-4" /></span>
+              <span>
+                <span className="block text-xs">Emergency ambulance</span>
+                <span className="block font-semibold text-white">{EMERGENCY_NUMBER}</span>
+              </span>
+            </a>
+          </div>
+        </div>
+        <div className="border-t border-white/10">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-6 text-xs sm:flex-row sm:px-6">
+            <p>© {new Date().getFullYear()} Mero Care Card. All rights reserved.</p>
+            <p>In an emergency, call {EMERGENCY_NUMBER} for an ambulance.</p>
           </div>
         </div>
       </footer>

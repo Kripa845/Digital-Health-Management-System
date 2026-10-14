@@ -11,88 +11,14 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-# Canonical unit stored for each patient field.
-CANONICAL_UNITS: dict[str, str] = {
-    'height': 'cm',
-    'weight': 'kg',
-    'blood_pressure': 'mmHg',
-    'heart_rate': 'bpm',
-    'spo2': '%',
-    'temperature': '°C/°F',
-    'hemoglobin': 'g/dL',
-    'blood_sugar_fasting': 'mg/dL',
-    'blood_sugar_random': 'mg/dL',
-    'hba1c': '%',
-    'cholesterol_total': 'mg/dL',
-    'cholesterol_hdl': 'mg/dL',
-    'cholesterol_ldl': 'mg/dL',
-    'triglycerides': 'mg/dL',
-    'serum_creatinine': 'mg/dL',
-    'blood_urea': 'mg/dL',
-    'uric_acid': 'mg/dL',
-    'bilirubin_total': 'mg/dL',
-    'ssgpt_alt': 'U/L',
-    'ssgot_ast': 'U/L',
-    'tsh': 'mIU/L',
-    't3': 'ng/dL',
-    't4': 'µg/dL',
-    'sodium': 'mEq/L',
-    'potassium': 'mEq/L',
-    'hematocrit': '%',
-    'esr': 'mm/hr',
-}
+from apps.lab_reports import lab_config
 
-# Recognised spellings → normalised key.
-_UNIT_ALIASES: dict[str, str] = {
-    'mg/dl': 'mg/dl', 'mg%': 'mg/dl', 'mgs/dl': 'mg/dl',
-    'mmol/l': 'mmol/l', 'mmol': 'mmol/l',
-    'umol/l': 'umol/l', 'µmol/l': 'umol/l', 'μmol/l': 'umol/l', 'micromol/l': 'umol/l',
-    'g/dl': 'g/dl', 'gm/dl': 'g/dl', 'gms/dl': 'g/dl', 'g%': 'g/dl', 'gm%': 'g/dl',
-    'g/l': 'g/l', 'gm/l': 'g/l',
-    '%': '%', 'percent': '%',
-    'mmol/mol': 'mmol/mol',
-    'cm': 'cm', 'm': 'm', 'in': 'in', 'inch': 'in', 'inches': 'in',
-    'kg': 'kg', 'kgs': 'kg', 'lb': 'lb', 'lbs': 'lb',
-    'mmhg': 'mmhg', 'mm/hg': 'mmhg',
-    'bpm': 'bpm', '/min': 'bpm', 'beats/min': 'bpm',
-    'u/l': 'u/l', 'iu/l': 'u/l',
-    'meq/l': 'meq/l',
-    'miu/l': 'miu/l', 'uiu/ml': 'miu/l', 'µiu/ml': 'miu/l', 'μiu/ml': 'miu/l', 'mu/l': 'miu/l',
-    'ng/dl': 'ng/dl', 'ug/dl': 'ug/dl', 'µg/dl': 'ug/dl', 'μg/dl': 'ug/dl',
-    'mm/hr': 'mm/hr', 'mm/h': 'mm/hr', 'mm/1sthr': 'mm/hr',
-    'c': 'c', '°c': 'c', 'f': 'f', '°f': 'f',
-}
-
-# For each field: normalised unit → multiplier to the canonical unit.
-# A unit absent here is not accepted for that field.
-_FACTORS: dict[str, dict[str, Decimal]] = {
-    'blood_sugar_fasting': {'mg/dl': Decimal(1), 'mmol/l': Decimal('18.016')},
-    'blood_sugar_random': {'mg/dl': Decimal(1), 'mmol/l': Decimal('18.016')},
-    'cholesterol_total': {'mg/dl': Decimal(1), 'mmol/l': Decimal('38.67')},
-    'cholesterol_hdl': {'mg/dl': Decimal(1), 'mmol/l': Decimal('38.67')},
-    'cholesterol_ldl': {'mg/dl': Decimal(1), 'mmol/l': Decimal('38.67')},
-    'triglycerides': {'mg/dl': Decimal(1), 'mmol/l': Decimal('88.57')},
-    'hemoglobin': {'g/dl': Decimal(1), 'g/l': Decimal('0.1'), 'mmol/l': Decimal('1.611')},
-    'serum_creatinine': {'mg/dl': Decimal(1), 'umol/l': Decimal(1) / Decimal('88.42')},
-    'blood_urea': {'mg/dl': Decimal(1), 'mmol/l': Decimal('6.006')},
-    'uric_acid': {'mg/dl': Decimal(1), 'umol/l': Decimal(1) / Decimal('59.48')},
-    'bilirubin_total': {'mg/dl': Decimal(1), 'umol/l': Decimal(1) / Decimal('17.1')},
-    'height': {'cm': Decimal(1), 'm': Decimal(100), 'in': Decimal('2.54')},
-    'weight': {'kg': Decimal(1), 'lb': Decimal('0.45359237')},
-    'hba1c': {'%': Decimal(1)},  # mmol/mol handled separately (not linear)
-    'spo2': {'%': Decimal(1)},
-    'hematocrit': {'%': Decimal(1)},
-    'heart_rate': {'bpm': Decimal(1)},
-    'ssgpt_alt': {'u/l': Decimal(1)},
-    'ssgot_ast': {'u/l': Decimal(1)},
-    'sodium': {'meq/l': Decimal(1), 'mmol/l': Decimal(1)},
-    'potassium': {'meq/l': Decimal(1), 'mmol/l': Decimal(1)},
-    'tsh': {'miu/l': Decimal(1)},
-    't3': {'ng/dl': Decimal(1)},
-    't4': {'ug/dl': Decimal(1)},
-    'esr': {'mm/hr': Decimal(1)},
-    'temperature': {'c': Decimal(1), 'f': Decimal(1)},  # stored as read; range check covers both
-}
+# Canonical unit stored for each patient field, the recognised spellings of each
+# unit, and per test: normalised unit → multiplier to the canonical unit (a unit
+# absent there is not accepted for that test). All in config/lab_tests.json.
+CANONICAL_UNITS: dict[str, str] = lab_config.canonical_units()
+_UNIT_ALIASES: dict[str, str] = lab_config.unit_aliases()
+_FACTORS: dict[str, dict[str, Decimal]] = lab_config.unit_factors()
 
 
 @dataclass
@@ -103,10 +29,21 @@ class Conversion:
     error: str = ''        # reason for rejection
 
 
+_SUPERSCRIPT_DIGITS = str.maketrans('⁰¹²³⁴⁵⁶⁷⁸⁹', '0123456789')
+
+
 def normalise_unit(raw: str) -> str:
-    """Lower-case, strip spaces and the "x10^n" multipliers OCR leaves around units."""
-    u = (raw or '').strip().lower().replace(' ', '')
-    u = re.sub(r'^[×x]10\^?\d+', '', u)
+    """Case-, space- and spelling-insensitive unit key: "10^3/uL", "x10³/µL", "*10^6/ul",
+    "10*3/cu.mm" and "Mill/cumm" all reduce to an entry of the unit aliases. The power
+    of ten is kept (it is part of the unit, not noise)."""
+    u = (raw or '').strip().lower().replace('µ', 'u').replace('μ', 'u')
+    u = re.sub(r'[⁰¹²³⁴⁵⁶⁷⁸⁹]+', lambda m: '^' + m.group(0).translate(_SUPERSCRIPT_DIGITS), u)
+    u = re.sub(r'[\s.]+', '', u).replace('^^', '^')
+    u = re.sub(r'^[\'"“”‘’`,]+', '', u)                             # stray OCR quote marks
+    u = re.sub(r'^[*x×]', '', u)                                    # "*10^6/ul", "x10^3/ul"
+    u = re.sub(r'^10[°%�\'"`~]+(?=\d{1,2}/)', '10^', u)       # OCR reads ^ as °, %, ' or an unknown glyph
+    u = re.sub(r'^10(?:\^|\*\*|\*|e)(\d{1,2})(?=/)', r'10^\1', u)    # 10**3, 10*3, 10e3 → 10^3
+    u = u.replace('cmm', 'cumm') if u.endswith('/cmm') else u
     return _UNIT_ALIASES.get(u, u)
 
 

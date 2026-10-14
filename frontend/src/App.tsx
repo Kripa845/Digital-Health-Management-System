@@ -15,7 +15,6 @@ const PatientDashboard = lazy(() => import('@/features/patient/PatientDashboard'
 const PatientCard = lazy(() => import('@/features/patient/PatientCard').then((m) => ({ default: m.PatientCard })))
 const PatientAppointments = lazy(() => import('@/features/patient/PatientAppointments').then((m) => ({ default: m.PatientAppointments })))
 const PatientReports = lazy(() => import('@/features/patient/PatientReports').then((m) => ({ default: m.PatientReports })))
-const PatientFindCare = lazy(() => import('@/features/patient/PatientFindCare').then((m) => ({ default: m.PatientFindCare })))
 const PatientProfile = lazy(() => import('@/features/patient/PatientProfile').then((m) => ({ default: m.PatientProfile })))
 const LabUploadPage = lazy(() => import('@/features/lab-reports/LabUploadPage').then((m) => ({ default: m.LabUploadPage })))
 const LabConfirmPage = lazy(() => import('@/features/lab-reports/LabConfirmPage').then((m) => ({ default: m.LabConfirmPage })))
@@ -31,12 +30,12 @@ const AdminDashboard = lazy(() => import('@/features/admin/AdminDashboard').then
 const AdminPatients = lazy(() => import('@/features/admin/AdminPatients').then((m) => ({ default: m.AdminPatients })))
 const AdminDoctors = lazy(() => import('@/features/admin/AdminDoctors').then((m) => ({ default: m.AdminDoctors })))
 const AdminAppointments = lazy(() => import('@/features/admin/AdminAppointments').then((m) => ({ default: m.AdminAppointments })))
-const AdminRecommendations = lazy(() => import('@/features/admin/AdminRecommendations').then((m) => ({ default: m.AdminRecommendations })))
 const AdminAccessRequests = lazy(() => import('@/features/admin/AdminAccessRequests').then((m) => ({ default: m.AdminAccessRequests })))
 const AdminAudit = lazy(() => import('@/features/admin/AdminAudit').then((m) => ({ default: m.AdminAudit })))
+const AdminSuspiciousAlerts = lazy(() => import('@/features/admin/AdminSuspiciousAlerts').then((m) => ({ default: m.AdminSuspiciousAlerts })))
+const AdminActivityAnalysis = lazy(() => import('@/features/admin/AdminActivityAnalysis').then((m) => ({ default: m.AdminActivityAnalysis })))
 const AdminSettings = lazy(() => import('@/features/admin/AdminSettings').then((m) => ({ default: m.AdminSettings })))
 const SymptomCheckerPage = lazy(() => import('@/features/symptom-checker/SymptomCheckerPage').then((m) => ({ default: m.SymptomCheckerPage })))
-const AdminLabReview = lazy(() => import('@/features/admin/AdminLabReview').then((m) => ({ default: m.AdminLabReview })))
 
 function RouteFallback() {
   return (
@@ -72,11 +71,13 @@ export default function App() {
             <Route path="/admin/patients" element={shell(<AdminPatients />)} />
             <Route path="/admin/doctors" element={shell(<AdminDoctors />)} />
             <Route path="/admin/appointments" element={shell(<AdminAppointments />)} />
-            <Route path="/admin/recommendations" element={shell(<AdminRecommendations />)} />
+            {/* The old Recommendations page was removed; its address opens the Symptom Checker. */}
+            <Route path="/admin/recommendations" element={<Navigate to="/admin/symptom-checker" replace />} />
             <Route path="/admin/access-requests" element={shell(<AdminAccessRequests />)} />
             <Route path="/admin/audit" element={shell(<AdminAudit />)} />
+            <Route path="/admin/activity-analysis" element={shell(<AdminActivityAnalysis />)} />
+            <Route path="/admin/suspicious-alerts" element={shell(<AdminSuspiciousAlerts />)} />
             <Route path="/admin/settings" element={shell(<AdminSettings />)} />
-            <Route path="/admin/lab-review" element={shell(<AdminLabReview />)} />
             <Route path="/admin/symptom-checker" element={shell(<SymptomCheckerPage />)} />
           </Route>
 
@@ -93,7 +94,8 @@ export default function App() {
             <Route path="/patient/card" element={shell(<PatientCard />)} />
             <Route path="/patient/appointments" element={shell(<PatientAppointments />)} />
             <Route path="/patient/reports" element={shell(<PatientReports />)} />
-            <Route path="/patient/find-care" element={shell(<PatientFindCare />)} />
+            {/* The old "Find a Doctor" page was removed; its address opens the Symptom Checker. */}
+            <Route path="/patient/find-care" element={<Navigate to="/patient/symptom-checker" replace />} />
             <Route path="/patient/symptom-checker" element={shell(<SymptomCheckerPage />)} />
             <Route path="/patient/profile" element={shell(<PatientProfile />)} />
             <Route path="/patient/lab-reports" element={shell(<LabHistoryPage />)} />

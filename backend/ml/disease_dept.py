@@ -1,91 +1,63 @@
-"""Which of the project's 21 departments should see each of the 41 dataset illnesses.
+"""Which of the project's departments should see each illness the model can predict.
 
-!!! This mapping NEEDS REVIEW BY A MEDICAL PROFESSIONAL BEFORE REAL USE. !!!
-It was written as a reasonable first-contact routing for a general hospital, not
-as medical advice. Entries in UNCERTAIN are the least clear-cut.
+DDXPlus has no departments. The pathology -> department map is read from
+ml/data/disease_dept.json (start from disease_dept_template.json, written by
+ml/ddxplus_adapter.py). Department names must be ones the app already uses
+(Doctor.department choices, the same names as apps/recommendations/data/symptom_department_map.json).
 
-The department names are the real ones used by the project
-(Doctor.department choices and apps/recommendations/data/symptom_department_map.json).
-Disease names are written exactly as in ml/data/dataset.csv, including its own
-spellings ("Osteoarthristis", "Peptic ulcer diseae"); lookups ignore case and
-extra spaces. Any unknown disease falls back to General Medicine.
+!!! The shipped map is PROVISIONAL and NEEDS REVIEW BY A CLINICIAN BEFORE REAL USE. !!!
+
+check_classes() runs at server startup: the server refuses to start when a trained
+illness has no department or a department name is not one of the app's.
 """
 from __future__ import annotations
 
-FALLBACK_DEPARTMENT = 'General Medicine'
+import json
+from pathlib import Path
 
-DISEASE_DEPARTMENT: dict[str, str] = {
-    # Skin
-    'Acne': 'Dermatology',
-    'Drug Reaction': 'Dermatology',          # usually seen as rash / itching
-    'Fungal infection': 'Dermatology',
-    'Impetigo': 'Dermatology',
-    'Psoriasis': 'Dermatology',
-    # Digestive system and liver
-    'Alcoholic hepatitis': 'Gastroenterology',
-    'Chronic cholestasis': 'Gastroenterology',
-    'Dimorphic hemmorhoids(piles)': 'Gastroenterology',
-    'GERD': 'Gastroenterology',
-    'Gastroenteritis': 'Gastroenterology',
-    'Jaundice': 'Gastroenterology',
-    'Peptic ulcer diseae': 'Gastroenterology',
-    'hepatitis A': 'Gastroenterology',
-    'Hepatitis B': 'Gastroenterology',
-    'Hepatitis C': 'Gastroenterology',
-    'Hepatitis D': 'Gastroenterology',
-    'Hepatitis E': 'Gastroenterology',
-    # Hormones and metabolism
-    'Diabetes': 'Endocrinology',
-    'Hyperthyroidism': 'Endocrinology',
-    'Hypothyroidism': 'Endocrinology',
-    'Hypoglycemia': 'Endocrinology',
-    # Heart and blood vessels
-    'Hypertension': 'Cardiology',
-    'Varicose veins': 'Cardiology',          # vascular; there is no vascular surgery department
-    'Heart attack': 'Emergency Medicine',    # needs emergency care first, then Cardiology
-    # Lungs
-    'Bronchial Asthma': 'Pulmonology',
-    'Pneumonia': 'Pulmonology',
-    'Tuberculosis': 'Pulmonology',
-    # Brain and nerves
-    'Migraine': 'Neurology',
-    'Paralysis (brain hemorrhage)': 'Neurology',
-    # Bones and joints
-    'Arthritis': 'Orthopedics',
-    'Cervical spondylosis': 'Orthopedics',
-    'Osteoarthristis': 'Orthopedics',
-    # Ear (inner ear balance disorder)
-    '(vertigo) Paroymsal  Positional Vertigo': 'ENT',
-    # Urinary tract
-    'Urinary tract infection': 'Urology',
-    # Infections and general illness (no infectious-disease department in the project)
-    'AIDS': 'General Medicine',
-    'Allergy': 'General Medicine',
-    'Chicken pox': 'General Medicine',
-    'Common Cold': 'General Medicine',
-    'Dengue': 'General Medicine',
-    'Malaria': 'General Medicine',
-    'Typhoid': 'General Medicine',
-}
+from ml.schema import SchemaError
 
-# The least clear-cut choices, to check first.
-UNCERTAIN = {
-    'Heart attack': 'Emergency Medicine chosen over Cardiology because it is an emergency.',
-    'Varicose veins': 'No vascular surgery department; Cardiology is the closest match.',
-    'Drug Reaction': 'Could also be General Medicine depending on the reaction.',
-    'Chicken pox': 'Could be Dermatology or Pediatrics (for children).',
-    'Paralysis (brain hemorrhage)': 'Needs Emergency Medicine first in a real emergency.',
-    'Allergy': 'No allergy/immunology department; could be ENT or Dermatology by symptom.',
-}
+ML_DIR = Path(__file__).resolve().parent
+DEPT_MAP_PATH = ML_DIR / 'data' / 'disease_dept.json'
+PROJECT_DEPARTMENTS_PATH = ML_DIR.parent / 'apps' / 'recommendations' / 'data' / 'symptom_department_map.json'
+FALLBACK_DEPARTMENT = 'General Medicine'   # only for names that are not trained illnesses (hand-made test models)
 
 
 def _key(name: str) -> str:
     return ' '.join(str(name or '').split()).lower()
 
 
+def project_departments() -> set[str]:
+    with open(PROJECT_DEPARTMENTS_PATH, encoding='utf-8') as fh:
+        return set(json.load(fh)['department_rules'])
+
+
+def load_map(path: Path = DEPT_MAP_PATH) -> tuple[dict[str, str], dict[str, str]]:
+    """(illness -> department, illness -> note on the least clear-cut choices)."""
+    try:
+        with open(path, encoding='utf-8') as fh:
+            data = json.load(fh)
+    except OSError as exc:
+        raise SchemaError(f'{path.name} is missing: copy disease_dept_template.json and fill it in.') from exc
+    return dict(data.get('departments', {})), dict(data.get('uncertain', {}))
+
+
+DISEASE_DEPARTMENT, UNCERTAIN = load_map()
 _LOOKUP = {_key(disease): dept for disease, dept in DISEASE_DEPARTMENT.items()}
 
 
 def department_for(disease: str) -> str:
-    """The department for a dataset illness; General Medicine when it is unknown."""
+    """The department for an illness (General Medicine for names outside the map)."""
     return _LOOKUP.get(_key(disease), FALLBACK_DEPARTMENT)
+
+
+def check_classes(classes, mapping: dict[str, str] | None = None) -> None:
+    """Raise SchemaError when a trained illness has no department, or a department is not the app's."""
+    mapping = DISEASE_DEPARTMENT if mapping is None else mapping
+    lookup = {_key(k): v for k, v in mapping.items()}
+    missing = [c for c in classes if not lookup.get(_key(c))]
+    if missing:
+        raise SchemaError(f'{DEPT_MAP_PATH.name}: trained illnesses without a department: {missing}')
+    invalid = {c: lookup[_key(c)] for c in classes if lookup[_key(c)] not in project_departments()}
+    if invalid:
+        raise SchemaError(f'{DEPT_MAP_PATH.name}: departments the app does not have: {invalid}')

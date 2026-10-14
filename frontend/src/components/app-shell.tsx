@@ -8,6 +8,7 @@ import { Wordmark } from '@/components/brand'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/notifications-bell'
 import { NAV, ROLE_LABEL } from '@/components/nav-config'
+import { SUSPICIOUS_ALERTS_PATH, SuspiciousAlertWatcher, useNewSuspiciousAlerts } from '@/components/suspicious-alerts'
 import { UserAvatar } from '@/components/ui/avatar'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -16,6 +17,7 @@ import {
 import type { Role } from '@/lib/types'
 
 function SidebarNav({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
+  const newAlerts = useNewSuspiciousAlerts(role === 'ADMIN').data?.length ?? 0
   return (
     <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-4">
       {NAV[role].map((sectionData, i) => (
@@ -44,6 +46,12 @@ function SidebarNav({ role, onNavigate }: { role: Role; onNavigate?: () => void 
                 <>
                   <item.icon className={cn('size-4.5 shrink-0', isActive ? 'text-primary' : 'text-subtle-foreground group-hover:text-foreground')} />
                   {item.label}
+                  {item.to === SUSPICIOUS_ALERTS_PATH && newAlerts > 0 && (
+                    <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-danger px-1.5 text-[11px] font-bold leading-5 text-white"
+                      aria-label={`${newAlerts} new`}>
+                      {newAlerts > 99 ? '99+' : newAlerts}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>
@@ -93,6 +101,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-background">
+      {effectiveRole === 'ADMIN' && <SuspiciousAlertWatcher />}
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-surface lg:flex">
         <div className="flex h-16 items-center px-5">

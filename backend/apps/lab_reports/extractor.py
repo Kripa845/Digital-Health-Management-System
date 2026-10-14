@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from apps.lab_reports import lab_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,6 +20,15 @@ class ExtractedField:
     reference_range: str = ''
     confidence: str = 'medium'
     raw_match: str = ''
+    # Tesseract's confidence (0–100) for the word(s) the value was read from; set by
+    # services/review.attach_confidences (None when unknown, e.g. the AI fallback).
+    ocr_confidence: float | None = None
+    # Set by services/table_reader for values read from a report's table: the test name as
+    # printed, a corrected reading to confirm (printed unit; e.g. 41 → 4.1 when OCR lost the
+    # decimal point), and why the value must be confirmed ([{code, message}]).
+    printed_name: str = ''
+    suggested_value: str = ''
+    review_reasons: list[dict] = field(default_factory=list)
 
 
 # ── Field aliases for flexible matching ───────────────────────────────────────
@@ -108,6 +119,9 @@ FIELD_ALIASES: dict[str, list[str]] = {
     'ssgot_ast': [
         'sgot', 'ast', 'aspartate aminotransferase', 'aspartate transaminase',
     ],
+    'bilirubin_direct': [
+        'direct bilirubin', 'bilirubin direct', 'conjugated bilirubin',
+    ],
     'bilirubin_total': [
         'bilirubin', 'total bilirubin',
     ],
@@ -149,6 +163,8 @@ _DISPLAY_NAMES: dict[str, str] = {
     'cholesterol_total': 'Total Cholesterol',
     'blood_sugar_fasting': 'Blood Sugar (Fasting)',
     'blood_sugar_random': 'Blood Sugar (Random)',
+    'bilirubin_total': 'Bilirubin (Total)',
+    'bilirubin_direct': 'Bilirubin (Direct)',
 }
 
 
@@ -375,38 +391,8 @@ def validate_blood_pressure(value: str) -> bool:
 
 
 # Physiologically plausible bounds. A value outside them is treated as an OCR
-# misread and is never written to the patient record.
-_PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
-    'height': (30, 250),
-    'weight': (1, 300),
-    'hemoglobin': (3, 25),
-    'blood_sugar_fasting': (20, 600),
-    'blood_sugar_random': (20, 800),
-    'cholesterol_total': (50, 500),
-    'cholesterol_hdl': (10, 1000),
-    'cholesterol_ldl': (10, 1000),
-    'triglycerides': (10, 1000),
-    'heart_rate': (30, 220),
-    'spo2': (50, 100),
-    'temperature': (30, 110),
-    'hba1c': (3, 20),
-    'serum_creatinine': (0.1, 20),
-    'blood_urea': (1, 300),
-    'uric_acid': (0.5, 20),
-    'ssgpt_alt': (1, 999),
-    'ssgot_ast': (1, 999),
-    'bilirubin_total': (0.1, 50),
-    'tsh': (0.001, 150),
-    't3': (0.1, 999),
-    't4': (0.1, 99),
-    'sodium': (100, 180),
-    'potassium': (1.5, 10),
-    'wbc_count': (0.1, 9999),
-    'rbc_count': (0.5, 15),
-    'platelet_count': (1, 9999),
-    'hematocrit': (5, 75),
-    'esr': (0, 200),
-}
+# misread and is never written to the patient record. Per test in config/lab_tests.json.
+_PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = lab_config.plausible_ranges()
 
 
 def validate_numeric_result(value: str, field: str) -> bool:
@@ -437,7 +423,9 @@ _NUM_AFTER_LABEL = re.compile(r'^[^\d\n]{0,30}?(?<![A-Za-z])(\d{1,6}(?:\.\d{1,3}
 
 # A unit printed right after the value (longest spellings first).
 _UNIT_AFTER_VALUE = re.compile(
-    r'^\s*(?P<unit>mmol\s*/\s*mol|mmol\s*/\s*l|[µμu]mol\s*/\s*l|mg\s*/\s*dl|mg\s*%|'
+    r'^\s*(?P<unit>(?:[*x×]\s*)?10\s*(?:\^|\*\*?|e)?\s*[0-9³⁶⁹]{1,2}\s*/\s*(?:[µμu]l|cu\.?\s*mm|mm3|l)|'
+    r'(?:lakhs?|mill(?:ions?)?|thou|cells)\s*/\s*(?:cu\.?\s*mm|mm3|[µμu]l)|/\s*(?:cu\.?\s*mm|mm3|[µμu]l)|'
+    r'mmol\s*/\s*mol|mmol\s*/\s*l|[µμu]mol\s*/\s*l|mg\s*/\s*dl|mg\s*%|'
     r'gm?s?\s*/\s*dl|gm?\s*/\s*l|gm?\s*%|m?eq\s*/\s*l|[µμu]?iu\s*/\s*ml|m?iu\s*/\s*l|'
     r'u\s*/\s*l|ng\s*/\s*dl|[µμu]g\s*/\s*dl|mm\s*/?\s*hg|mm\s*/\s*h(?:r|our)?|bpm|/\s*min|'
     r'%|kgs?|lbs?|cm|in(?:ches)?|m|°?\s*[cf])(?![a-z])',
@@ -457,13 +445,21 @@ _NOT_HAEMOGLOBIN_LINE = re.compile(
     r'h\s*b\s*a\s*[1il|]\s*c|a[1il|]c\b|glyc|mean\s+cell|corpuscular|\bmchc?\b', re.IGNORECASE)
 
 
+# Lines that mention a test's name but are a different test: "Bilirubin Direct" is not
+# total bilirubin, "Glycated Haemoglobin" is not haemoglobin.
+_EXCLUDED_LINES: dict[str, re.Pattern] = {
+    'hemoglobin': _NOT_HAEMOGLOBIN_LINE,
+    'bilirubin_total': re.compile(r'\b(?:in)?direct\b|\b(?:un)?conjugated\b', re.IGNORECASE),
+}
+
+
 def _on_excluded_line(text: str, m: re.Match, field: str) -> bool:
-    """Whether a haemoglobin match sits on an HbA1c or red-cell-index line."""
-    if field != 'hemoglobin':
+    """Whether a match sits on a line that belongs to a different test (see _EXCLUDED_LINES)."""
+    if field not in _EXCLUDED_LINES:
         return False
     start = text.rfind('\n', 0, m.start()) + 1
     end = text.find('\n', m.end())
-    return bool(_NOT_HAEMOGLOBIN_LINE.search(text[start:end if end != -1 else len(text)]))
+    return bool(_EXCLUDED_LINES[field].search(text[start:end if end != -1 else len(text)]))
 
 
 def _first_match(pattern: re.Pattern, text: str, field: str) -> Optional[re.Match]:
@@ -472,7 +468,7 @@ def _first_match(pattern: re.Pattern, text: str, field: str) -> Optional[re.Matc
 
 def _value_after_alias(field: str, line: str) -> tuple[bool, Optional[str], str]:
     """Return (alias found, value that follows the alias on the same line, its unit)."""
-    if field == 'hemoglobin' and _NOT_HAEMOGLOBIN_LINE.search(line):
+    if field in _EXCLUDED_LINES and _EXCLUDED_LINES[field].search(line):
         return False, None, ''
     found = False
     for rx in _ALIAS_RES.get(field, []):

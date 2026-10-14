@@ -106,7 +106,7 @@ export function PatientDashboard() {
         icon={HeartPulse}
         actions={
           <>
-            <Button asChild variant="secondary"><Link to="/patient/find-care"><Stethoscope className="size-4" />Find a doctor</Link></Button>
+            <Button asChild variant="secondary"><Link to="/patient/symptom-checker"><Stethoscope className="size-4" />Check symptoms</Link></Button>
             <Button asChild><Link to="/patient/appointments"><CalendarDays className="size-4" />Book appointment</Link></Button>
           </>
         }
@@ -264,7 +264,7 @@ export function PatientDashboard() {
             <div className="space-y-2">
               {[
                 { to: '/patient/appointments', icon: CalendarDays, label: 'Book appointment' },
-                { to: '/patient/find-care', icon: HeartPulse, label: 'Find a doctor' },
+                { to: '/patient/symptom-checker', icon: Stethoscope, label: 'Check symptoms' },
                 { to: '/patient/reports', icon: FileText, label: 'Upload a report' },
                 { to: '/patient/card', icon: IdCard, label: 'View health card' },
               ].map((q) => (

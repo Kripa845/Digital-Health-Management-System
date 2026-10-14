@@ -75,7 +75,7 @@ export function AdminAppointments() {
     <div className="space-y-6">
       <PageHeader
         title="Appointments"
-        description="Review incoming requests — accept or decline pending bookings, and cancel accepted visits when needed."
+        description="Accept or decline requests, and cancel accepted visits."
         icon={CalendarDays}
       />
 

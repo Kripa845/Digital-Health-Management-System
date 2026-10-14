@@ -103,3 +103,40 @@ export function useDebounced<T>(value: T, delay = 300): T {
 export function tableHeadClass(extra?: string) {
   return cn('px-4 py-3 text-left text-[0.7rem] font-semibold uppercase tracking-wide text-subtle-foreground', extra)
 }
+
+// ── AHP comparisons (Settings → Doctor ranking) ───────────────────────
+// Saaty's 1-9 scale. A value above 1 favours the left criterion, below 1 the right one.
+export const SAATY: { value: string; n: number }[] = [
+  '1/9', '1/8', '1/7', '1/6', '1/5', '1/4', '1/3', '1/2', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+].map((value) => {
+  const [a, b] = value.split('/').map(Number)
+  return { value, n: b ? a / b : a }
+})
+const STRENGTH: Record<number, string> = { 3: 'moderately', 5: 'strongly', 7: 'very strongly', 9: 'extremely' }
+
+export function saatyLabel(value: string, left: string, right: string) {
+  const [a, b] = value.split('/').map(Number)
+  const k = b || a
+  if (k === 1) return '1 · equally important'
+  return `${value} · ${b ? right : left} ${STRENGTH[k] ? `${STRENGTH[k]} ` : ''}more important`
+}
+
+/** The scale value nearest to a stored number (compared on a log scale). */
+export function nearestSaaty(n: number) {
+  return SAATY.reduce((best, o) => (Math.abs(Math.log(o.n / n)) < Math.abs(Math.log(best.n / n)) ? o : best)).value
+}
+
+/** The full reciprocal matrix from the upper-triangle choices: a[j][i] = 1 / a[i][j], diagonal 1. */
+export function fullMatrix(size: number, upper: Record<string, string>) {
+  return Array.from({ length: size }, (_, i) => Array.from({ length: size }, (_, j) => {
+    if (i === j) return 1
+    const n = SAATY.find((o) => o.value === upper[i < j ? `${i}-${j}` : `${j}-${i}`])?.n ?? 1
+    return i < j ? n : 1 / n
+  }))
+}
+
+export function upperOf(matrix: number[][]) {
+  const upper: Record<string, string> = {}
+  matrix.forEach((row, i) => row.forEach((v, j) => { if (j > i) upper[`${i}-${j}`] = nearestSaaty(v) }))
+  return upper
+}

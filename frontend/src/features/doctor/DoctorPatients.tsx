@@ -16,6 +16,7 @@ import {
 } from '@/components/patterns'
 import { ActiveStatusBadge } from '@/components/status-badge'
 import { documentService, patientService, prescriptionService } from '@/lib/api'
+import { HealthVitalsCard } from '@/features/patient/HealthVitalsCard'
 import { formatBytes, formatDate, formatDateTime, saveBlob } from '@/lib/utils'
 import type { MedDocument, Patient, Prescription } from '@/lib/types'
 
@@ -33,7 +34,7 @@ export function DoctorPatients() {
     <div className="space-y-8">
       <PageHeader
         title="My patients"
-        description="Patients under your active care. Open a record to view full medical details and manage prescriptions."
+        description="Patients under your care."
         icon={Users}
       />
 
@@ -171,6 +172,11 @@ function PatientDetail({ patient }: { patient: Patient }) {
           <InfoRow label="Current medication" value={p.current_medication || 'None recorded'} />
         </dl>
       </section>
+
+      <Separator />
+
+      {/* Health dashboard (lab results) */}
+      <HealthVitalsCard patientId={patient.id} />
 
       <Separator />
 

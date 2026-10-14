@@ -108,6 +108,8 @@ export interface Doctor {
   license_number: string
   department: string
   specialization: string
+  /** Years in practice (set by admins; used to rank doctors). */
+  experience_years?: number
   dob?: string
   age?: number
   gender?: Gender
@@ -118,6 +120,8 @@ export interface Doctor {
   availability_schedule?: Record<string, string>
   registration_date?: string
   user?: UserRef
+  /** Login username of the linked user account. */
+  login_username?: string
   // present on admin create response (shown once)
   generated_username?: string
   generated_password?: string
@@ -154,6 +158,21 @@ export interface Appointment {
   notes?: string | null
   created_at?: string
   updated_at?: string
+}
+
+/** GET /doctors/:id/available-dates/ — dates are Kathmandu "YYYY-MM-DD". */
+export interface AvailableDates {
+  doctor: number
+  today: string
+  days: number
+  dates: string[]
+}
+
+/** GET /doctors/:id/available-slots/?date= — slot start times as "HH:MM". */
+export interface AvailableSlots {
+  doctor: number
+  date: string
+  slots: string[]
 }
 
 export interface AppointmentStats {
@@ -215,8 +234,31 @@ export interface Recommendation {
   patient_name?: string
 }
 
-/** POST /smart-symptom-check/ (Naive Bayes + TOPSIS). Any status other than "ok" falls back to the keyword check. */
-export type SmartCheckStatus = 'ok' | 'not_enough_info' | 'low_confidence' | 'model_unavailable'
+/** POST /smart-symptom-check/ (red flags + Random Forest + AHP-weighted TOPSIS). "emergency" means a red-flag
+ *  rule matched: the model was not run and there is no fallback. Any other status except "ok" may carry a
+ *  follow-up question, then falls back to the keyword check. */
+export type SmartCheckStatus =
+  | 'ok' | 'emergency' | 'needs_confirmation' | 'not_enough_info' | 'low_confidence' | 'model_unavailable'
+
+/** A word only close to a known symptom ("feverr" → fever?): confirm with { [symptom]: true } in answers,
+ *  or send the term in dismissed. Never used by the model until confirmed. */
+export interface SmartCheckSuggestion {
+  term: string
+  /** Symptom name (DDXPlus code) to send back in answers. */
+  symptom: string
+  label: string
+  score: number
+}
+
+/** One information-gain follow-up question; answer it with { [symptom]: true | false }. */
+export interface SmartCheckQuestion {
+  /** Symptom name from the schema (a DDXPlus code), sent back in "answers". */
+  symptom: string
+  /** Short English name, e.g. "coloured sputum". */
+  label: string
+  /** The question to show. */
+  text: string
+}
 
 export interface SmartCheckDoctor {
   id: number
@@ -224,17 +266,51 @@ export interface SmartCheckDoctor {
   department: string
   specialization: string
   score: number
+  /** Hours from now to the first free slot in the next 14 days (336 when none). */
+  earliest_slot_hours: number
   free_hours: number
   caseload: number
+  experience_years: number
+  /** Specialisation match: 1 for the suggested department, the model's share for others. */
+  match: number
   reason: string
+}
+
+/** How one phrase from the text was mapped to a symptom (shown by its label). */
+export interface SmartCheckMatch {
+  term: string
+  symptom: string
+  method: 'exact' | 'synonym' | 'lemma' | 'fuzzy'
+  /** rapidfuzz similarity (0–100) for fuzzy matches, else null. */
+  score: number | null
 }
 
 export interface SmartCheckResult {
   status: SmartCheckStatus
   symptoms: string[]
+  /** Non-negated phrases and the symptom each was mapped to. */
+  matched?: SmartCheckMatch[]
+  /** Symptoms the text said are absent ("no fever"). */
+  negated?: string[]
+  /** Words that matched no symptom; shown so nothing typed is silently ignored. */
+  unrecognized?: string[]
+  /** "Did you mean ...?" (status needs_confirmation). */
+  suggestions?: SmartCheckSuggestion[]
+  /** Why the model is unsure (low_confidence). */
+  reason?: string
+  /** Red-flag rules matched (status "emergency"). */
+  red_flags?: { id: string; message: string }[]
+  /** "Not enough information" advice (not_enough_info / low_confidence), or the emergency message. */
+  message?: string
+  /** When to get emergency help (not_enough_info / low_confidence). */
+  safety_net?: string
+  /** Follow-up question when the model is unsure (not_enough_info / low_confidence), else null. */
+  question?: SmartCheckQuestion | null
   illnesses?: { name: string; probability: number }[]
   department?: string
   dept_probability?: number
+  /** Probability per department (the model's illness probabilities summed). */
+  departments?: Record<string, number>
   doctors?: SmartCheckDoctor[]
   doctors_department?: string | null
   doctors_note?: string
@@ -277,6 +353,90 @@ export interface AuditLog {
   description: string
   timestamp: string
   ip_address?: string | null
+}
+
+export type ActivityFlagStatus = 'NEW' | 'REVIEWED' | 'DISMISSED'
+
+export interface ActivityFlagReason {
+  feature: string
+  value: number
+  /** Median of the same feature among users with the same role. */
+  median: number
+  /** Robust z-score (median/MAD). */
+  z: number
+  text: string
+}
+
+/** One reason on a saved flag, worded by the API: plain text, plus the numbers behind it for a tooltip. */
+export interface ActivityFlagReasonText {
+  metric: string
+  /** e.g. "12 failed login attempts. Most patients had none." */
+  text: string
+  /** e.g. "failed_logins = 12, role median 0, robust z +5.6" */
+  detail: string
+}
+
+/** From the strongest reason's robust z (thresholds in backend reason_text.SEVERITY_THRESHOLDS). */
+export type ActivityFlagSeverity = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/** A user whose activity stood out (DBSCAN noise point). For review only. */
+export interface ActivityFlag {
+  id: number
+  user: number
+  username: string
+  full_name: string
+  role: 'ADMIN' | 'DOCTOR' | 'PATIENT'
+  window_start: string
+  window_end: string
+  features: Record<string, number>
+  reasons: ActivityFlagReasonText[]
+  severity: ActivityFlagSeverity
+  eps: number
+  status: ActivityFlagStatus
+  reviewed_by: number | null
+  reviewed_by_username: string | null
+  note: string
+  created_at: string
+}
+
+/** One user's day of activity that DBSCAN found unlike recent normal days. For review only. */
+export interface SuspiciousAlert {
+  id: number
+  user: number
+  username: string
+  full_name: string
+  role: 'ADMIN' | 'DOCTOR' | 'PATIENT'
+  day: string
+  /** The two features furthest from normal, e.g. "failed_logins = 25 (normal about 0)". */
+  reason: string
+  features: Record<string, number>
+  status: ActivityFlagStatus
+  created_at: string
+}
+
+/** One DBSCAN run over today's activity (POST /suspicious-alerts/detect/). */
+export interface SuspiciousDetection {
+  day: string
+  history: number
+  eps: number
+  min_samples: number
+  /** DBSCAN only runs for a role with at least this many user-days. */
+  min_rows: number
+  user_days: number
+  enough_data: boolean
+  checked: number
+  clusters: number
+  created: number
+  updated: number
+  roles: { role: string; user_days: number; checked: number; clusters: number; suspicious: number; skipped: boolean; message: string }[]
+  ran_at: string
+}
+
+export interface ActivitySettings {
+  activity_window_days: number
+  dbscan_eps: number
+  dbscan_min_samples: number
+  updated_at: string
 }
 
 export interface AdminStats {
@@ -340,7 +500,26 @@ export interface LabReportField {
   change_status: LabFieldChangeStatus
   skip_reason: string
   flag: LabFieldFlag
+  /** OCR confidence (0–100) of the word(s) the value was read from; 100 for a PDF's own text. */
+  ocr_confidence?: number | null
+  /** Must be checked against the scan before it is saved (unconfirmed values are never saved). */
+  needs_confirmation?: boolean
+  /** Why the value may have been MISREAD (decimal_point also covers an auto-corrected scan reading). */
+  confirmation_reasons?: { code: LabConfirmationCode; message: string; value?: string }[]
+  /** A reading suggested for a value that lost its decimal point (dashboard unit). */
+  suggested_value?: string
+  /** Clinical: the value against the range printed on its own row (null when no range was read). */
+  reference_flag?: 'low' | 'normal' | 'high' | null
+  /** 'not_read' when the report's range could not be read; no default range is substituted. */
+  range_status?: 'read' | 'not_read'
 }
+
+export type LabConfirmationCode =
+  | 'low_confidence' | 'far_outside_range' | 'decimal_point'
+  | 'conflict' | 'readings_differ' | 'range_misread' | 'loose_match'
+
+/** A row of the report's results table whose test name was not recognised (never saved). */
+export interface LabUnmatchedRow { name: string; value: string; unit: string; range: string; reason: string }
 
 export interface ExtractedValue { value: string; unit: string }
 
@@ -377,6 +556,7 @@ export interface LabReport {
     blood_group: string | null
     tests: Record<'hemoglobin' | 'cholesterol_total' | 'blood_sugar_random', ExtractedValue | null>
     other_tests: Record<string, ExtractedValue>
+    unmatched_rows?: LabUnmatchedRow[]
   }
   // Nested
   fields?: LabReportField[]
@@ -420,6 +600,8 @@ export interface ConfirmPayload {
   values?: Record<string, string>
   /** Out-of-range tests the user explicitly accepts. */
   accept_flagged?: string[]
+  /** Values needing confirmation that the user checked against the scan. */
+  confirmed?: string[]
   /** Required to confirm a report older than the latest confirmed one. */
   acknowledge_older_report?: boolean
 }
@@ -465,3 +647,88 @@ export interface ApiErrorBody {
 export type LabUploadErrorCode =
   | 'invalid_file' | 'file_too_large' | 'unreadable' | 'no_text' | 'no_values' | 'values_not_usable' | 'duplicate'
   | 'patient_id_mismatch' | 'invalid_values' | 'not_pending' | 'server_error'
+
+/** GET/PUT /ranking-settings/: the admin's AHP comparisons for ranking doctors. */
+export interface RankingCriterion {
+  key: string
+  label: string
+  /** True = more is better; false = less is better. */
+  benefit: boolean
+}
+
+export interface RankingSettings {
+  /** 5x5 Saaty comparison matrix, rows and columns in `criteria` order. */
+  ahp_pairwise: number[][]
+  ahp_weights: Record<string, number>
+  /** Consistency ratio; saved only when below 0.10. */
+  ahp_cr: number
+  criteria: RankingCriterion[]
+  updated_at: string
+}
+
+export type ActivityPointKind = 'core' | 'border' | 'noise'
+
+/** One user in the step-by-step DBSCAN analysis. */
+export interface ActivityAnalysisUser {
+  user_id: number
+  username: string
+  /** Step 2: counts in the window. */
+  raw: Record<string, number>
+  /** Step 3: log1p of each count. */
+  log: Record<string, number>
+  /** Step 4: log value scaled to mean 0, sd 1 within the role. */
+  scaled: Record<string, number>
+  /** Robust z-score (median/MAD) of each raw count, used to explain a flag. */
+  z: Record<string, number>
+  /** DBSCAN cluster label; -1 is noise, null when DBSCAN was not run. */
+  cluster: number | null
+  kind: ActivityPointKind | null
+  /** Distance to the k-th nearest neighbour in scaled space. */
+  kdist: number | null
+  /** 2-D PCA projection, for the picture only. */
+  x: number
+  y: number
+  reasons: ActivityFlagReason[]
+}
+
+export interface ActivityAnalysis {
+  role: 'ADMIN' | 'DOCTOR' | 'PATIENT'
+  demo: boolean
+  /** eps and min_samples were picked from the data (the suggested values), not typed in. */
+  auto: boolean
+  days: number
+  window_start: string
+  window_end: string
+  n_users: number
+  min_users: number
+  eps: number
+  min_samples: number
+  k: number
+  features: string[]
+  skipped: boolean
+  message: string
+  scaling: Record<string, { mean: number; sd: number }>
+  kdist_sorted: number[]
+  suggested_eps: number | null
+  /** Suggested min_samples for this many users and the eps that goes with it (null when no clear jump). */
+  suggested: { min_samples: number; eps: number } | null
+  explained_variance: [number, number]
+  n_clusters: number
+  counts: Record<ActivityPointKind, number>
+  users: ActivityAnalysisUser[]
+  /** Suspicious alerts (failed-login rule or daily DBSCAN) for this role on days inside the window; empty for demo. */
+  suspicious_alerts: AnalysisAlert[]
+}
+
+export type AnalysisAlert = Pick<SuspiciousAlert, 'id' | 'username' | 'full_name' | 'day' | 'reason' | 'status'> & { user_id: number }
+
+export interface ActivityAnalysisParams {
+  role: 'ADMIN' | 'DOCTOR' | 'PATIENT'
+  days: number
+  /** Ignored when auto is true. */
+  eps?: number
+  min_samples?: number
+  demo: boolean
+  /** Use the suggested eps and min_samples for this role's users. */
+  auto?: boolean
+}

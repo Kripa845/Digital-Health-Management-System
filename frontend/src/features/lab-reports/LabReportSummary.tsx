@@ -146,8 +146,7 @@ export function LabReportSummary({ report, compact = false }: Props) {
         <div className="flex items-start gap-2 rounded-[var(--radius-md)] border border-border bg-surface-2 px-3.5 py-3 text-sm text-muted-foreground">
           <Info className="mt-0.5 size-4 shrink-0" />
           <p>
-            No standard clinical values were detected in this report. The original file has been
-            stored and is available for download. Try a clearer scan or a machine-printed report.
+            No values were found. Try a clearer scan or a printed report.
           </p>
         </div>
       )}
@@ -175,8 +174,7 @@ export function LabReportSummary({ report, compact = false }: Props) {
             <p className="text-xs font-semibold uppercase tracking-wide text-warning">Needs review (not saved)</p>
           </div>
           <p className="text-xs text-muted-foreground">
-            These values were read from the report but not added to the health record. The reason is shown
-            under each one. Ask the care team to check and enter them if needed.
+            Not added to the health record. Ask the care team to check them.
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {needsReview.map((f) => (

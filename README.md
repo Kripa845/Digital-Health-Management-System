@@ -70,7 +70,38 @@ Sign-in is a simple username + password.)
 - **Doctor portal** — assigned patients, QR card scanning with access requests, appointments,
   editable profile & availability.
 - **Admin portal** — dashboards & stats, full patient/doctor management, appointments,
-  recommendation history, access-request approvals, audit log, settings.
+  the symptom checker (assign a recommended doctor to a patient), access-request approvals, audit log, settings.
+  **Settings → Doctor ranking** sets how both symptom checkers rank doctors: the admin compares five criteria
+  in pairs (earliest free slot, free hours this week, caseload, experience, department match) on Saaty's 1–9
+  scale, and AHP turns the comparisons into TOPSIS weights. Comparisons with a consistency ratio of 0.10 or
+  more are refused (`ml/ahp.py`, `apps/recommendations/ranking.py`).
+
+## Smart symptom check (DDXPlus)
+
+Pipeline: text matching with negation → red-flag rules (emergency, before the model) → Random Forest
+→ one information-gain follow-up question when unsure (chosen from symptom-per-illness rates saved with the
+model) → AHP-weighted TOPSIS doctor ranking. The 110 symptoms
+and 49 illnesses come from **DDXPlus, a synthetic dataset**; `backend/ml/data/symptom_schema.json` is the only
+list of them, and the server refuses to start if the model, synonyms, red flags or department map disagree
+with it. Results are suggestions, not diagnoses. Evaluation: `backend/ml/RESULTS.md`.
+
+Rebuilding (from `backend/`): put `release_evidences.json`, `release_conditions.json` and the
+`release_*_patients` files in `ml/data/ddxplus/` (not in git), then
+
+```bash
+python -m ml.ddxplus_adapter --split train      # same flags for every split
+python -m ml.ddxplus_adapter --split test
+python -m ml.train_model                        # Random Forest -> ml/symptom_model.joblib
+python -m ml.evaluate                           # writes ml/RESULTS.md
+```
+
+**Needs clinician review:** the department map (`ml/data/disease_dept.json`), the red-flag rules
+(`ml/red_flags.py`), the symptom labels (`ml/data/ddxplus_labels.json`) and the draft synonyms
+(`ml/data/symptom_synonyms.json`, Nepali / Romanised phrases still to add).
+
+Data: Arsène Fansi Tchango, Rishab Goel, Zhi Wen, Julien Martel and Joumana Ghosn. *DDXPlus: A New Dataset
+For Automatic Medical Diagnosis.* NeurIPS 2022 Datasets and Benchmarks Track. Licensed CC-BY 4.0
+(https://github.com/mila-iqia/ddxplus).
 
 ## Design system
 
@@ -103,6 +134,16 @@ and full light/dark theming (system-aware, with a manual toggle). Components liv
 - **Lab reports:** see [Lab report upload](#lab-report-upload) below. Files are encrypted at rest, the
   report text is never stored or logged, and IDs read from reports are masked in the audit log.
 - **Audit log:** append-only; entries cannot be edited or deleted.
+- **Suspicious activity alerts** (Admin → Suspicious Alerts). Two checks write them; an alert never
+  blocks or changes an account, and admins get one notification when an alert is first created.
+  - *Brute force, immediately:* `BRUTE_FORCE_MAX_FAILED_LOGINS` failed logins for one account within
+    `BRUTE_FORCE_WINDOW_MINUTES` (default 5 in 10) raise an alert on the next failed login.
+  - *DBSCAN, daily:* `python manage.py detect_suspicious` compares each user's day with that role's
+    last 14 days. Nothing runs it for you, so schedule it once a day, e.g. cron
+    `55 23 * * * cd /path/to/backend && venv/bin/python manage.py detect_suspicious`, or a Windows Task
+    Scheduler task running `venv\Scripts\python.exe manage.py detect_suspicious` in `backend\`. It
+    skips a role with fewer than 30 user-days of activity, so on a new system only the brute-force rule
+    produces alerts at first.
 
 ---
 

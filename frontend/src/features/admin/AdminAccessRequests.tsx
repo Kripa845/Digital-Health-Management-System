@@ -56,7 +56,7 @@ export function AdminAccessRequests() {
     <div className="space-y-6">
       <PageHeader
         title="Access requests"
-        description="Doctors request access to patient records here. Approving assigns the patient to the doctor."
+        description="Approve or decline doctors' requests to view patient records."
         icon={ShieldCheck}
         actions={
           <div className="w-48">

@@ -1,6 +1,6 @@
 from apps.audit.models import AuditLog
 
-def log_activity(user, action, description, request=None):
+def log_activity(user, action, description, request=None, patient=None):
     ip_address = None
     if request:
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -13,5 +13,6 @@ def log_activity(user, action, description, request=None):
         user=user,
         action=action,
         description=description,
-        ip_address=ip_address
+        ip_address=ip_address,
+        patient=patient,
     )

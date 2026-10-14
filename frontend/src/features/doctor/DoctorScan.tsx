@@ -143,7 +143,7 @@ export function DoctorScan() {
     <div className="space-y-8">
       <PageHeader
         title="Scan a patient card"
-        description="Scan a Mero Care QR card or enter its ID. Assigned patients open in full; otherwise you'll see a general profile and can request access."
+        description="Scan a Mero Care QR card or enter its ID."
         icon={ScanLine}
       />
 

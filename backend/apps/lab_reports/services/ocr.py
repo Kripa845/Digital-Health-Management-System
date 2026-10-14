@@ -13,8 +13,12 @@ class OcrResult:
     text: str
     confidence: float | None    # 0–100; selectable PDF text counts as 100; None when nothing was read
     page_images: list[bytes] = field(default_factory=list, repr=False)   # for the optional AI fallback
-    source: str = 'ocr'         # 'text_layer', 'ocr' or '' (no text)
+    source: str = 'ocr'         # 'text_layer', 'ocr', 'mixed' (some pages each) or ''
     ocr_error: str = ''         # why there is no text, when there is none
+    # OCR only: each line's (word, confidence) pairs; used for the per-value confidence.
+    words: list[list[tuple[str, float]]] = field(default_factory=list, repr=False)
+    # OCR only: each page's preprocessed image and word boxes (services/table_reader.py).
+    pages: list = field(default_factory=list, repr=False)
 
 
 def read_document(raw: bytes, ext: str) -> OcrResult:
@@ -22,4 +26,5 @@ def read_document(raw: bytes, ext: str) -> OcrResult:
         doc = read_report_file(raw, ext)
     except (RuntimeError, ValueError) as exc:
         raise UnreadableFile(str(exc)) from exc
-    return OcrResult(doc.text or '', doc.confidence, doc.page_images, doc.source, doc.ocr_error)
+    return OcrResult(doc.text or '', doc.confidence, doc.page_images, doc.source, doc.ocr_error, doc.words,
+                     doc.pages)

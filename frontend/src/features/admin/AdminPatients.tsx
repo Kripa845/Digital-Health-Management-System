@@ -26,6 +26,7 @@ import { HealthCardQr } from '@/components/health-card-qr'
 import type { Patient } from '@/lib/types'
 import { LabReportUploadDialog } from '@/features/lab-reports/LabReportUploadDialog'
 import { LabReportRow } from '@/features/lab-reports/LabReportRow'
+import { HealthVitalsCard } from '@/features/patient/HealthVitalsCard'
 import {
   CopyButton, CredentialRow, CredentialsDialog, type GeneratedCreds,
 } from './admin-common'
@@ -372,8 +373,7 @@ function QrDialog({ patient, onClose }: { patient: Patient | null; onClose: () =
           <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-warning-soft px-3.5 py-2.5 text-warning">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" />
             <p className="text-xs leading-relaxed">
-              Issue a new QR code if the card was lost. The current card stops working immediately and the
-              patient needs a reprinted card.
+              The current card stops working immediately and will need to be reprinted.
             </p>
           </div>
         )}
@@ -642,7 +642,7 @@ function PatientDetailsDialog({
 }) {
   const p = patient
   const fullName = p ? [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ') : ''
-  const [tab, setTab] = useState<'info' | 'lab'>('info')
+  const [tab, setTab] = useState<'info' | 'lab' | 'health'>('info')
 
   const labReportsQ = useQuery({
     queryKey: ['admin', 'lab-reports', p?.id],
@@ -675,6 +675,7 @@ function PatientDetailsDialog({
               {([
                 { key: 'info', label: 'Patient info' },
                 { key: 'lab', label: 'Lab reports' },
+                { key: 'health', label: 'Health dashboard' },
               ] as const).map((t) => (
                 <button
                   key={t.key}
@@ -728,13 +729,13 @@ function PatientDetailsDialog({
               </div>
             )}
 
+            {/* ── Health dashboard tab ──────────────────────────── */}
+            {tab === 'health' && <HealthVitalsCard patientId={p.id} />}
+
             {/* ── Lab reports tab ───────────────────────────────── */}
             {tab === 'lab' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Uploaded lab reports and OCR processing results for this patient.
-                  </p>
+                <div className="flex items-center justify-end">
                   <LabReportUploadDialog
                     patientId={p.id}
                     queryScope="admin"

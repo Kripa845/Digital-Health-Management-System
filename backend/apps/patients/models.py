@@ -63,6 +63,7 @@ class Patient(models.Model):
     ssgpt_alt          = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True, help_text='SGPT/ALT U/L')
     ssgot_ast          = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True, help_text='SGOT/AST U/L')
     bilirubin_total    = models.DecimalField(max_digits=4, decimal_places=2, blank=True, null=True, help_text='Total bilirubin mg/dL')
+    bilirubin_direct   = models.DecimalField(max_digits=4, decimal_places=2, blank=True, null=True, help_text='Direct bilirubin mg/dL')
     tsh                = models.DecimalField(max_digits=6, decimal_places=3, blank=True, null=True, help_text='TSH mIU/L')
     t3                 = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True, help_text='T3 ng/dL')
     t4                 = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True, help_text='T4 μg/dL')

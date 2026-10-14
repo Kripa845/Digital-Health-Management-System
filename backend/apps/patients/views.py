@@ -60,6 +60,13 @@ class PatientViewSet(viewsets.ModelViewSet):
             return qs.filter(user=user)
         return Patient.objects.none()
 
+    # Opening a record is logged so admins can see who viewed which patient.
+    def retrieve(self, request, *args, **kwargs):
+        patient = self.get_object()
+        log_activity(request.user, 'VIEW_PATIENT', f"Viewed patient record {patient.patient_id}.", request,
+                     patient=patient)
+        return Response(self.get_serializer(patient).data)
+
     # Create
 
     def create(self, request, *args, **kwargs):
@@ -193,12 +200,12 @@ class PatientViewSet(viewsets.ModelViewSet):
         # Admin always gets full access
         if is_admin:
             data = PatientSerializer(patient, context={'request': request}).data
-            log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
+            log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request, patient=patient)
             return Response({'access': 'FULL', 'patient': data})
 
         # Doctor workflow: full record only with an active assignment AND an approved request.
         if doctor_can_access(user, patient):
-            log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
+            log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request, patient=patient)
             data = PatientSerializer(patient, context={'request': request}).data
             return Response({'access': 'FULL', 'patient': data})
 
@@ -214,9 +221,9 @@ class PatientViewSet(viewsets.ModelViewSet):
                     title='Patient Access Request',
                     message=f"Dr. {doctor.user.get_full_name() or doctor.user.username} requested access to patient {patient.patient_id} via QR scan.",
                 )
-            log_activity(user, 'ACCESS_REQUEST', f"Requested access to patient {patient.patient_id} via QR scan.", request)
+            log_activity(user, 'ACCESS_REQUEST', f"Requested access to patient {patient.patient_id} via QR scan.", request, patient=patient)
 
-        log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request)
+        log_activity(user, 'SCAN_QR', f"Scanned patient {patient.patient_id}.", request, patient=patient)
 
         general = {
             'id': patient.id,

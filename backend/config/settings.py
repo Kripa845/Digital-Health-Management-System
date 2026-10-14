@@ -160,6 +160,11 @@ REST_FRAMEWORK = {
     },
 }
 
+# Brute-force rule (apps/audit/brute_force.py): this many failed logins for one
+# account within this many minutes raises a suspicious-activity alert at once.
+BRUTE_FORCE_MAX_FAILED_LOGINS = int(os.environ.get('BRUTE_FORCE_MAX_FAILED_LOGINS', '5'))
+BRUTE_FORCE_WINDOW_MINUTES = int(os.environ.get('BRUTE_FORCE_WINDOW_MINUTES', '10'))
+
 # Simple JWT
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
@@ -248,11 +253,35 @@ LAB_USE_LIBMAGIC = os.environ.get('LAB_USE_LIBMAGIC', 'False') == 'True'
 # "warn" (shown with a warning; confirming needs an explicit acknowledgement),
 # "block" (refused, nothing stored) or "allow" (no warning).
 LAB_REPORT_OLDER_DATE_POLICY = os.environ.get('LAB_REPORT_OLDER_DATE_POLICY', 'warn')
+# Smart symptom check: symptom synonyms (JSON) and the rapidfuzz similarity (0–100)
+# a misspelt word needs to be matched to a known symptom without asking. Words from
+# SMART_CHECK_SUGGEST_THRESHOLD up to it are shown as "Did you mean ...?" and only used once
+# confirmed. 85 was too low: "redness" matched "tiredness" (87.5) and became fatigue.
+SMART_CHECK_SYNONYMS_PATH = os.environ.get('SMART_CHECK_SYNONYMS_PATH', str(BASE_DIR / 'ml' / 'data' / 'symptom_synonyms.json'))
+SMART_CHECK_FUZZY_THRESHOLD = float(os.environ.get('SMART_CHECK_FUZZY_THRESHOLD', '93'))
+SMART_CHECK_SUGGEST_THRESHOLD = float(os.environ.get('SMART_CHECK_SUGGEST_THRESHOLD', '80'))
+# When ml/symptom_model.joblib cannot be loaded, wait this long before trying again,
+# doubling after each failure up to the maximum (seconds).
+SMART_CHECK_MODEL_RETRY_SECONDS = float(os.environ.get('SMART_CHECK_MODEL_RETRY_SECONDS', '30'))
+SMART_CHECK_MODEL_RETRY_MAX_SECONDS = float(os.environ.get('SMART_CHECK_MODEL_RETRY_MAX_SECONDS', '600'))
 # Numeric report dates such as 04/05/2026: "DMY" (day first, the default) or "MDY".
 LAB_REPORT_DATE_ORDER = os.environ.get('LAB_REPORT_DATE_ORDER', 'DMY')
 # Optional AI fallback: when neither the PDF text nor OCR yields a dashboard
 # value, the page images are sent to Anthropic's API to read them. Off by
 # default because patient data then leaves this server.
+# Lab report OCR preprocessing (OpenCV; see apps/lab_reports/ocr_service.preprocess_image).
+LAB_OCR_TARGET_WIDTH = int(os.environ.get('LAB_OCR_TARGET_WIDTH', '2000'))          # px
+LAB_OCR_MAX_UPSCALE = float(os.environ.get('LAB_OCR_MAX_UPSCALE', '3.0'))
+LAB_OCR_MAX_DESKEW_ANGLE = float(os.environ.get('LAB_OCR_MAX_DESKEW_ANGLE', '10'))  # degrees
+LAB_OCR_DESKEW_STEP = float(os.environ.get('LAB_OCR_DESKEW_STEP', '0.5'))           # degrees
+LAB_OCR_DENOISE_STRENGTH = int(os.environ.get('LAB_OCR_DENOISE_STRENGTH', '7'))
+LAB_OCR_ADAPTIVE_BLOCK_SIZE = int(os.environ.get('LAB_OCR_ADAPTIVE_BLOCK_SIZE', '71'))  # px, odd
+LAB_OCR_ADAPTIVE_C = int(os.environ.get('LAB_OCR_ADAPTIVE_C', '20'))
+# A value needs the user's confirmation when its OCR word confidence is below this (0–100),
+# or it is more than LAB_FAR_OUTSIDE_FACTOR times outside the range printed on the report.
+# NEEDS REVIEW: starting points to tune on real reports, not validated figures.
+LAB_VALUE_MIN_CONFIDENCE = float(os.environ.get('LAB_VALUE_MIN_CONFIDENCE', '80'))
+LAB_FAR_OUTSIDE_FACTOR = float(os.environ.get('LAB_FAR_OUTSIDE_FACTOR', '3'))
 LAB_LLM_FALLBACK = os.environ.get('LAB_LLM_FALLBACK', 'False') == 'True'
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 LAB_LLM_MODEL = os.environ.get('LAB_LLM_MODEL', 'claude-opus-5-5')
