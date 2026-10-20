@@ -5,5 +5,11 @@ __pycache__/
 .env
 .git/
 .gitignore
-db.sqlite3
+*.sqlite3
 media/
+e2e-media/
+staticfiles/
+# Training data only; the server needs ml/symptom_model.joblib and ml/data/*.json
+ml/data/ddxplus/
+ml/data/train/
+ml/data/test/

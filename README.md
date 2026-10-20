@@ -59,6 +59,8 @@ Vite proxies `/api` and `/media` to the backend, so no CORS setup is needed in d
 (Full list printed by `seed_demo`.
 Sign-in is a simple username + password.)
 
+**Deploying online** (Vercel + Hugging Face Spaces + Neon): see [docs/deployment.md](docs/deployment.md).
+
 ---
 
 ## What's inside
