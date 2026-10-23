@@ -1,17 +1,24 @@
 import uuid as uuid_lib
+from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 
 from apps.audit.utils import log_activity
-from apps.patients.models import Patient
-from apps.patients.serializers import PatientSelfUpdateSerializer, PatientSerializer, PublicPatientSerializer
+from apps.patients.models import Patient, QrAccessRequest
+from apps.patients.serializers import (
+    PatientSelfUpdateSerializer, PatientSerializer, PublicPatientSerializer,
+    QrAccessRequestCreateSerializer, QrAccessRequestSerializer, qr_extended_record,
+)
 from apps.notifications.models import Notification
 from apps.documents.models import Document
 from apps.documents.serializers import DocumentSerializer
@@ -23,6 +30,34 @@ import logging
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
+
+
+# Per visitor IP (these endpoints are public). AnonRateThrottle honours `scope` on the
+# class; ScopedRateThrottle would read it from the view instead and never limit.
+class QrAccessRequestThrottle(AnonRateThrottle):
+    scope = 'qr_access_request'
+
+
+class QrAccessStatusThrottle(AnonRateThrottle):
+    scope = 'qr_access_status'
+
+
+def client_ip(request):
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+    return forwarded.split(',')[0].strip() if forwarded else request.META.get('REMOTE_ADDR')
+
+
+def qr_access_state(access: QrAccessRequest) -> dict:
+    """What the requester's page is told: EXPIRED once an approval has run out."""
+    state = access.status
+    if state == QrAccessRequest.Status.APPROVED and not access.is_active:
+        state = 'EXPIRED'
+    return {
+        'token': str(access.token),
+        'status': state,
+        'created_at': access.created_at,
+        'expires_at': access.expires_at,
+    }
 
 
 class PatientViewSet(viewsets.ModelViewSet):
@@ -172,6 +207,67 @@ class PatientViewSet(viewsets.ModelViewSet):
         serializer = PublicPatientSerializer(patient, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    # Someone who scanned the card asks an admin for more than the public profile.
+    # No account: the token returned here, kept by their browser, is their only key.
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path=r'public/(?P<uuid>[^/.]+)/access-requests',
+        permission_classes=[permissions.AllowAny],
+        authentication_classes=[],
+        throttle_classes=[QrAccessRequestThrottle],
+    )
+    def request_qr_access(self, request, uuid=None):
+        try:
+            patient = Patient.objects.get(uuid_token=uuid)
+        except (Patient.DoesNotExist, ValueError, DjangoValidationError):
+            return Response({'detail': 'Invalid QR code or profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = QrAccessRequestCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone = serializer.validated_data['requester_phone']
+        if QrAccessRequest.objects.filter(patient=patient, requester_phone=phone,
+                                          status=QrAccessRequest.Status.PENDING).exists():
+            return Response({'detail': 'A request from this phone number is already waiting for an admin.'},
+                            status=status.HTTP_409_CONFLICT)
+
+        access = serializer.save(patient=patient, requester_ip=client_ip(request))
+        for admin in User.objects.filter(role='ADMIN', is_active=True):
+            Notification.objects.create(
+                receiver=admin, role='ADMIN',
+                title='QR Card Access Request',
+                message=f"{access.requester_name} ({access.requester_phone}) scanned the card of patient "
+                        f"{patient.patient_id} and asks for more information: {access.reason}",
+            )
+        log_activity(None, 'QR_ACCESS_REQUEST',
+                     f"{access.requester_name} ({access.requester_phone}) requested more information "
+                     f"from the QR card of patient {patient.patient_id}.", request, patient=patient)
+        return Response(qr_access_state(access), status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path=r'public/(?P<uuid>[^/.]+)/access-requests/(?P<token>[^/.]+)',
+        permission_classes=[permissions.AllowAny],
+        authentication_classes=[],
+        throttle_classes=[QrAccessStatusThrottle],
+    )
+    def qr_access_status(self, request, uuid=None, token=None):
+        """The waiting page asks here until the admin decides; an approved, unexpired
+        request also returns the extra information."""
+        try:
+            access = QrAccessRequest.objects.select_related('patient').get(token=token, patient__uuid_token=uuid)
+        except (QrAccessRequest.DoesNotExist, ValueError, DjangoValidationError):
+            return Response({'detail': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        data = qr_access_state(access)
+        if access.is_active:
+            data['record'] = qr_extended_record(access.patient)
+            log_activity(None, 'QR_ACCESS_VIEW',
+                         f"{access.requester_name} ({access.requester_phone}) viewed the extended QR record of "
+                         f"patient {access.patient.patient_id}.", request, patient=access.patient)
+        return Response(data)
+
     # Doctor QR scan
     @action(
         detail=False,
@@ -256,8 +352,16 @@ class PatientViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='regenerate_qr', permission_classes=[IsAdmin])
     def regenerate_qr(self, request, pk=None):
         patient = self.get_object()
-        patient.uuid_token = uuid_lib.uuid4()
-        patient.save(update_fields=['uuid_token'])
+        now = timezone.now()
+        with transaction.atomic():
+            patient.uuid_token = uuid_lib.uuid4()
+            patient.save(update_fields=['uuid_token'])
+            # Whoever has the lost card keeps nothing it was given: end approvals, refuse waiting requests.
+            requests = QrAccessRequest.objects.filter(patient=patient)
+            requests.filter(status=QrAccessRequest.Status.APPROVED, expires_at__gt=now).update(expires_at=now)
+            requests.filter(status=QrAccessRequest.Status.PENDING).update(
+                status=QrAccessRequest.Status.DECLINED, resolved_at=now, resolved_by=request.user,
+            )
         log_activity(
             request.user, 'REGENERATE_QR',
             f"Issued a new QR code for patient {patient.patient_id}; the previous card no longer works.",
@@ -346,3 +450,64 @@ class PatientViewSet(viewsets.ModelViewSet):
             'inactive_patients': Patient.objects.filter(status='Inactive').count(),
             'total_users': User.objects.count(),
         }, status=status.HTTP_200_OK)
+
+
+class QrAccessRequestViewSet(viewsets.ReadOnlyModelViewSet):
+    """Requests for more information from a scanned QR card, decided by an admin."""
+    serializer_class = QrAccessRequestSerializer
+    permission_classes = [IsAdmin]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status', 'patient']
+    queryset = QrAccessRequest.objects.select_related('patient')
+
+    def _resolve(self, request, access, new_status):
+        access.status = new_status
+        access.resolved_at = timezone.now()
+        access.resolved_by = request.user
+        if new_status == QrAccessRequest.Status.APPROVED:
+            access.expires_at = access.resolved_at + timedelta(hours=settings.QR_ACCESS_HOURS)
+        access.save(update_fields=['status', 'resolved_at', 'resolved_by', 'expires_at'])
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        access = self.get_object()
+        if access.status != QrAccessRequest.Status.PENDING:
+            return Response({'detail': 'This request has already been resolved.'}, status=status.HTTP_400_BAD_REQUEST)
+        self._resolve(request, access, QrAccessRequest.Status.APPROVED)
+        if access.patient.user_id:
+            Notification.objects.create(
+                receiver=access.patient.user, role='PATIENT',
+                title='Your Card Information Was Shared',
+                message=f"{access.requester_name} ({access.requester_phone}) scanned your health card and was "
+                        f"allowed to see your medical information for {settings.QR_ACCESS_HOURS} hours. "
+                        f"Reason given: {access.reason}",
+            )
+        log_activity(request.user, 'APPROVE_QR_ACCESS',
+                     f"Approved QR card access for {access.requester_name} ({access.requester_phone}) "
+                     f"to patient {access.patient.patient_id} for {settings.QR_ACCESS_HOURS} hours.",
+                     request, patient=access.patient)
+        return Response(self.get_serializer(access).data)
+
+    @action(detail=True, methods=['post'])
+    def decline(self, request, pk=None):
+        access = self.get_object()
+        if access.status != QrAccessRequest.Status.PENDING:
+            return Response({'detail': 'This request has already been resolved.'}, status=status.HTTP_400_BAD_REQUEST)
+        self._resolve(request, access, QrAccessRequest.Status.DECLINED)
+        log_activity(request.user, 'DECLINE_QR_ACCESS',
+                     f"Declined QR card access for {access.requester_name} ({access.requester_phone}) "
+                     f"to patient {access.patient.patient_id}.", request, patient=access.patient)
+        return Response(self.get_serializer(access).data)
+
+    @action(detail=True, methods=['post'])
+    def revoke(self, request, pk=None):
+        """End an approved access before it expires."""
+        access = self.get_object()
+        if not access.is_active:
+            return Response({'detail': 'This request does not currently give access.'}, status=status.HTTP_400_BAD_REQUEST)
+        access.expires_at = timezone.now()
+        access.save(update_fields=['expires_at'])
+        log_activity(request.user, 'REVOKE_QR_ACCESS',
+                     f"Ended QR card access for {access.requester_name} ({access.requester_phone}) "
+                     f"to patient {access.patient.patient_id}.", request, patient=access.patient)
+        return Response(self.get_serializer(access).data)

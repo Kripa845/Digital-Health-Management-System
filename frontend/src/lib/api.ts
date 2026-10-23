@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance } from 'axios'
 import type {
-  AccessRequest, ActivityAnalysis, ActivityAnalysisParams, ActivityFlag, ActivityFlagStatus, ActivitySettings, SuspiciousAlert, SuspiciousDetection,
+  AccessRequest, QrAccessRequest, QrAccessRequestInput, QrAccessState, ActivityAnalysis, ActivityAnalysisParams, ActivityFlag, ActivityFlagStatus, ActivitySettings, SuspiciousAlert, SuspiciousDetection,
   AdminStats, Appointment, AppointmentStats, AuditLog, AvailableDates, AvailableSlots,
   CurrentUser, Doctor, DoctorAssignment, LabReport, LoginResponse, MedDocument,
   ApiErrorBody, ConfirmPayload, LabDashboard, LabReportStatusInfo, LabReviewItem,
@@ -253,6 +253,20 @@ export const accessRequestService = {
   create: async (patient: number, reason?: string) => (await api.post('/access-requests/', { patient, reason })).data,
   approve: async (id: number) => (await api.post(`/access-requests/${id}/approve/`)).data,
   decline: async (id: number) => (await api.post(`/access-requests/${id}/decline/`)).data,
+}
+
+// ── QR card requests for more information ─────────────────────────────
+// The public calls carry no login (like publicProfile): the token is the requester's only key.
+export const qrAccessService = {
+  request: async (uuid: string, data: QrAccessRequestInput): Promise<QrAccessState> =>
+    (await axios.post(`${BASE}/patients/public/${uuid}/access-requests/`, data)).data,
+  status: async (uuid: string, token: string): Promise<QrAccessState> =>
+    (await axios.get(`${BASE}/patients/public/${uuid}/access-requests/${token}/`)).data,
+  // Admin
+  list: async (params?: any): Promise<QrAccessRequest[]> => listAll('/qr-access-requests/', params),
+  approve: async (id: number) => (await api.post(`/qr-access-requests/${id}/approve/`)).data,
+  decline: async (id: number) => (await api.post(`/qr-access-requests/${id}/decline/`)).data,
+  revoke: async (id: number) => (await api.post(`/qr-access-requests/${id}/revoke/`)).data,
 }
 
 // ── Audit ─────────────────────────────────────────────────────────────

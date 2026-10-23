@@ -111,3 +111,43 @@ class Patient(models.Model):
 
     def __str__(self):
         return f"{self.patient_id} - {self.first_name} {self.last_name}"
+
+
+class QrAccessRequest(models.Model):
+    """Someone who scanned a patient's QR card asks to see more than the public profile.
+
+    The requester has no account: the secret ``token`` is kept by their browser and is
+    the only way to read the request's status or, once an admin approves it, the extra
+    medical information until ``expires_at``.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        APPROVED = 'APPROVED', 'Approved'
+        DECLINED = 'DECLINED', 'Declined'
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='qr_access_requests')
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    requester_name = models.CharField(max_length=100)
+    requester_phone = models.CharField(max_length=20)
+    reason = models.TextField(max_length=500)
+    requester_ip = models.GenericIPAddressField(null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='resolved_qr_access_requests',
+    )
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    @property
+    def is_active(self):
+        from django.utils import timezone
+        return self.status == self.Status.APPROVED and self.expires_at is not None and self.expires_at > timezone.now()
+
+    def __str__(self):
+        return f"QR access: {self.requester_name} -> {self.patient.patient_id} ({self.status})"

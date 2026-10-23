@@ -10,7 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 from django.http import FileResponse
 
@@ -37,7 +37,9 @@ def error(code: str, message: str, http_status: int, **extra) -> Response:
     return Response({'code': code, 'message': message, 'detail': message, **extra}, status=http_status)
 
 
-class UploadThrottle(ScopedRateThrottle):
+# Per user. UserRateThrottle honours `scope` on the class; ScopedRateThrottle reads it from
+# the view instead, so with it this limit was never applied.
+class UploadThrottle(UserRateThrottle):
     scope = 'lab_upload'
 
 

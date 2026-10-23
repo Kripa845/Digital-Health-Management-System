@@ -6,7 +6,7 @@ from django.db import IntegrityError, transaction
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from apps.patients.models import Patient
+from apps.patients.models import Patient, QrAccessRequest
 from apps.users.credentials import generate_password
 from apps.users.username import (
     is_valid_person_name,
@@ -418,3 +418,89 @@ class PatientSelfUpdateSerializer(serializers.ModelSerializer):
             if user_fields:
                 user.save(update_fields=user_fields)
             return super().update(instance, validated_data)
+
+
+# ---------------------------------------------------------------------------
+# More information requested from a scanned QR card (no account needed)
+# ---------------------------------------------------------------------------
+
+class QrAccessRequestCreateSerializer(serializers.ModelSerializer):
+    """What the person who scanned the card must give so an admin can decide (and call back)."""
+
+    class Meta:
+        model = QrAccessRequest
+        fields = ('requester_name', 'requester_phone', 'reason')
+
+    def validate_requester_name(self, value):
+        value = ' '.join(value.split())
+        if len(value) < 2:
+            raise serializers.ValidationError("Please enter your full name.")
+        return value
+
+    def validate_requester_phone(self, value):
+        value = re.sub(r'[\s-]', '', value)
+        if not re.match(r'^(98|97)\d{8}$', value):
+            raise serializers.ValidationError(
+                "Please enter a valid Nepal mobile number (starting with 98 or 97, exactly 10 digits)."
+            )
+        return value
+
+    def validate_reason(self, value):
+        value = value.strip()
+        if len(value) < 10:
+            raise serializers.ValidationError("Please explain briefly why you need this information (at least 10 characters).")
+        return value
+
+
+class QrAccessRequestSerializer(serializers.ModelSerializer):
+    """A QR-card request as the admin's Access Requests page lists it."""
+    patient_name = serializers.SerializerMethodField()
+    patient_id_code = serializers.CharField(source='patient.patient_id', read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = QrAccessRequest
+        fields = (
+            'id', 'patient', 'patient_name', 'patient_id_code',
+            'requester_name', 'requester_phone', 'reason', 'requester_ip',
+            'status', 'created_at', 'resolved_at', 'expires_at', 'is_active',
+        )
+        read_only_fields = fields
+
+    def get_patient_name(self, obj):
+        return ' '.join(filter(None, [obj.patient.first_name, obj.patient.middle_name, obj.patient.last_name]))
+
+
+def qr_extended_record(patient) -> dict:
+    """What an approved QR-card request may see beyond the public profile."""
+    from apps.lab_reports.services.dashboard import build_dashboard
+
+    dashboard = build_dashboard(patient)
+
+    def num(value):
+        return None if value in (None, '') else str(value)
+
+    return {
+        'medical': {
+            'allergies': patient.allergies or '',
+            'current_medication': patient.current_medication or '',
+            'prescription': patient.prescription or '',
+        },
+        'body': {
+            **dashboard['body'],
+            'blood_pressure': patient.blood_pressure or None,
+            'heart_rate': patient.heart_rate,
+            'spo2': num(patient.spo2),
+            'temperature': num(patient.temperature),
+        },
+        'contact': {
+            'phone': patient.phone,
+            'email': patient.email or '',
+            'address': patient.address,
+        },
+        # Only tests with a value; the history charts are left to the patient's own dashboard.
+        'lab_results': [
+            {k: t[k] for k in ('test', 'label', 'unit', 'latest', 'status', 'reference')}
+            for t in dashboard['tests'] if t['latest']
+        ],
+    }

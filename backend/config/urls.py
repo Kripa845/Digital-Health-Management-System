@@ -24,7 +24,7 @@ from apps.users.views import (
     AdminDashboardStatsView,
     ChangePasswordView,
 )
-from apps.patients.views import PatientViewSet
+from apps.patients.views import PatientViewSet, QrAccessRequestViewSet
 from apps.doctors.views import DoctorViewSet, DoctorAssignmentViewSet, PrescriptionViewSet, AccessRequestViewSet
 from apps.recommendations.views import RecommendationHistoryViewSet
 from apps.recommendations.smart_views import RankingSettingsView, SmartSymptomCheckView
@@ -41,6 +41,7 @@ router.register(r'patients', PatientViewSet, basename='patient')
 router.register(r'doctors', DoctorViewSet, basename='doctor')
 router.register(r'assignments', DoctorAssignmentViewSet, basename='assignment')
 router.register(r'access-requests', AccessRequestViewSet, basename='access-request')
+router.register(r'qr-access-requests', QrAccessRequestViewSet, basename='qr-access-request')
 router.register(r'prescriptions', PrescriptionViewSet, basename='prescription')
 router.register(r'recommendations', RecommendationHistoryViewSet, basename='recommendation')
 router.register(r'documents', DocumentViewSet, basename='document')

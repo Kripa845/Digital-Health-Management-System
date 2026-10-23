@@ -10,6 +10,7 @@ import { UserAvatar } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/misc'
 import { patientService } from '@/lib/api'
 import type { Patient } from '@/lib/types'
+import { QrAccessPanel } from './QrAccessPanel'
 
 export function PublicProfilePage() {
   const { uuid } = useParams<{ uuid: string }>()
@@ -87,6 +88,8 @@ export function PublicProfilePage() {
             </div>
           </Card>
         )}
+
+        {state === 'ok' && uuid && <div className="mt-6"><QrAccessPanel uuid={uuid} /></div>}
       </main>
     </div>
   )

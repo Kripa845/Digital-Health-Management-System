@@ -161,8 +161,15 @@ REST_FRAMEWORK = {
         'user': '1000/day',
         'login': os.environ.get('LOGIN_THROTTLE_RATE', '10/min'),
         'lab_upload': os.environ.get('LAB_UPLOAD_THROTTLE_RATE', '20/hour'),
+        # Someone who scanned a QR card: new requests for more information, per IP...
+        'qr_access_request': os.environ.get('QR_ACCESS_REQUEST_THROTTLE_RATE', '5/hour'),
+        # ...and status checks (the waiting page asks every few seconds).
+        'qr_access_status': os.environ.get('QR_ACCESS_STATUS_THROTTLE_RATE', '240/hour'),
     },
 }
+
+# How long an approved QR-card request shows the extra medical information.
+QR_ACCESS_HOURS = int(os.environ.get('QR_ACCESS_HOURS', '24'))
 
 # Brute-force rule (apps/audit/brute_force.py): this many failed logins for one
 # account within this many minutes raises a suspicious-activity alert at once.

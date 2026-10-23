@@ -130,6 +130,12 @@ and full light/dark theming (system-aware, with a manual toggle). Components liv
   opened from is used.
 - **Public QR profile:** shows name, photo, age, gender, blood group and emergency contact only. If a card
   is lost, an admin can issue a new QR code (Patients → View QR → Card lost?), which disables the old one.
+- **More information from a scanned card:** whoever scans a card can tap *Request more information* and give
+  their name, mobile number and reason. Admins decide on **Access Requests → QR card**. If approved, only the
+  phone that asked (it keeps a secret token) sees allergies, medication, vitals, lab results and contact
+  details, for `QR_ACCESS_HOURS` (default 24); the admin can end it earlier, and the patient is notified.
+  Issuing a new QR code ends every approval and waiting request made through the old card. Requests are
+  limited per IP (`QR_ACCESS_REQUEST_THROTTLE_RATE`, default 5/hour).
 - **Files:** uploads are stored under random names and served only through authenticated download
   endpoints.
 - **Lab reports:** see [Lab report upload](#lab-report-upload) below. Files are encrypted at rest, the
@@ -211,6 +217,8 @@ upload → file checks → OCR → extract values → identity gate → preview 
 | `LAB_LLM_FALLBACK` | `False` | Send page images of reports that text and OCR could not read to Anthropic (Claude). **Patient data leaves the server** when used. |
 | `ANTHROPIC_API_KEY` | empty | API key for the AI fallback (never put it in code) |
 | `LAB_LLM_MODEL`, `LAB_LLM_TIMEOUT` | `claude-opus-5-5`, `45` | Model and timeout (seconds) for the AI fallback |
+| `QR_ACCESS_HOURS` | `24` | How long an approved QR-card request shows the extra information |
+| `QR_ACCESS_REQUEST_THROTTLE_RATE`, `QR_ACCESS_STATUS_THROTTLE_RATE` | `5/hour`, `240/hour` | Per-IP limits on QR-card requests and on the waiting page's status checks |
 | `MEDIA_ROOT` | `backend/media` | Overridable (used by the end-to-end test server) |
 
 Digital PDFs need nothing extra. Scanned PDFs and photos need **Tesseract**, or the AI fallback. Poppler is

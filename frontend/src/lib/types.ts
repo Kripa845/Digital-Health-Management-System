@@ -345,6 +345,61 @@ export interface AccessRequest {
   resolved_at?: string | null
 }
 
+/** Someone who scanned a QR card asked an admin for more information (no account). */
+export type QrAccessStatus = 'PENDING' | 'APPROVED' | 'DECLINED' | 'EXPIRED'
+
+export interface QrAccessRequestInput {
+  requester_name: string
+  requester_phone: string
+  reason: string
+}
+
+export interface QrLabResult {
+  test: string
+  label: string
+  unit: string
+  latest: { value: string; date: string | null } | null
+  status: string | null
+  reference: string | null
+}
+
+/** What an approved QR request shows beyond the public profile. */
+export interface QrExtendedRecord {
+  medical: { allergies: string; current_medication: string; prescription: string }
+  body: {
+    height: string | null; weight: string | null; bmi: number | null; bmi_status: string | null
+    blood_pressure: string | null; heart_rate: number | null; spo2: string | null; temperature: string | null
+  }
+  contact: { phone: string; email: string; address: string }
+  lab_results: QrLabResult[]
+}
+
+/** The requester's view of their request; `record` only while approved and not expired. */
+export interface QrAccessState {
+  token: string
+  status: QrAccessStatus
+  created_at: string
+  expires_at: string | null
+  record?: QrExtendedRecord
+}
+
+/** A QR request as the admin's Access Requests page lists it. */
+export interface QrAccessRequest {
+  id: number
+  patient: number
+  patient_name: string
+  patient_id_code: string
+  requester_name: string
+  requester_phone: string
+  reason: string
+  requester_ip: string | null
+  status: 'PENDING' | 'APPROVED' | 'DECLINED'
+  created_at: string
+  resolved_at: string | null
+  expires_at: string | null
+  is_active: boolean
+}
+
 export interface AuditLog {
   id: number
   user?: number | null

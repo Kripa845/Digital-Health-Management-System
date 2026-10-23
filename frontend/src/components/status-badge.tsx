@@ -22,7 +22,7 @@ export function ActiveStatusBadge({ status }: { status: ActiveStatus }) {
 }
 
 const ACCESS: Record<string, BadgeProps['variant']> = {
-  PENDING: 'warning', APPROVED: 'success', DECLINED: 'danger',
+  PENDING: 'warning', APPROVED: 'success', DECLINED: 'danger', EXPIRED: 'neutral',
 }
 export function AccessStatusBadge({ status }: { status: string }) {
   return <Badge variant={ACCESS[status] ?? 'neutral'}>{status[0] + status.slice(1).toLowerCase()}</Badge>
