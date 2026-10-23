@@ -15,8 +15,7 @@ RUN apt-get update && apt-get install -y \
 # libmagic is installed above, so uploaded files' real types are checked with python-magic.
 ENV LAB_USE_LIBMAGIC=True
 
-# Hosts such as Hugging Face Spaces run the container as user 1000, so the app
-# files belong to that user.
+# Run as an unprivileged user (uid 1000) that owns the app files.
 RUN useradd -m -u 1000 app && mkdir /app && chown app:app /app
 
 # Set working directory
@@ -37,8 +36,8 @@ RUN python manage.py collectstatic --noinput
 USER app
 
 # Create/update the database tables on every start, then serve.
-# Several workers so one long OCR upload does not block everyone else, and a
-# timeout that leaves room for the capped OCR work in a request. Each worker
-# loads the symptom model (~1 GB of RAM), so keep WEB_CONCURRENCY within the
-# host's memory.
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-10000} --workers ${WEB_CONCURRENCY:-3} --timeout ${GUNICORN_TIMEOUT:-120}"]
+# Several workers or threads so one long OCR upload does not block everyone
+# else, and a timeout that leaves room for the capped OCR work in a request.
+# Each worker loads its own copy of the symptom model; threads share one, so
+# on a small server use 1 worker with several threads (GUNICORN_THREADS).
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-10000} --workers ${WEB_CONCURRENCY:-3} --threads ${GUNICORN_THREADS:-1} --timeout ${GUNICORN_TIMEOUT:-120}"]

@@ -42,4 +42,3 @@ frontend/dist/
 .pytest_cache/
 frontend/test-results/
 __pycache__/
-backend/ml/symptom_model.joblib

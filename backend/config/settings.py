@@ -26,6 +26,9 @@ if not SECRET_KEY:
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 _allowed_hosts = os.environ.get('ALLOWED_HOSTS', '')
+# Render sets the service's own address (e.g. merocarecard-api.onrender.com).
+if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+    _allowed_hosts = ','.join(filter(None, [_allowed_hosts, os.environ['RENDER_EXTERNAL_HOSTNAME']]))
 if _allowed_hosts:
     ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts.split(',') if h.strip()]
 elif DEBUG:
