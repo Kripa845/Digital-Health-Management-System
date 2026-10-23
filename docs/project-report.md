@@ -146,8 +146,8 @@ server data. The visual design comes from one set of design tokens with light an
 There is one `User` table with a **role**: ADMIN, DOCTOR or PATIENT. A doctor or patient user is linked
 one-to-one to a `Doctor` or `Patient` profile.
 
-1. **Accounts are created by administrators only** (no self-registration). The login details are
-   emailed to the new user; if the email cannot be sent, the administrator is shown them once.
+1. **Accounts are created by administrators only** (no self-registration). The administrator is
+   shown the new user's login details once, to hand over in person; no email is sent.
 2. **The first login forces a password change.** Administrators can reset any doctor's or patient's
    password, which issues a new temporary one.
 3. **Login uses JSON Web Tokens.** The access token lasts 60 minutes; the refresh token lasts 7 days and

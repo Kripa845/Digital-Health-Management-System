@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -60,17 +58,16 @@ class PatientCreationTests(TestCase):
         r = self.client.post('/api/v1/patients/', {**NEW_PATIENT, 'first_name': 'R4m'}, format='json')
         self.assertEqual(r.status_code, 400)
 
-    def test_credentials_returned_when_email_fails(self):
-        with patch('apps.users.email_service.send_mail', side_effect=OSError('SMTP down')):
-            r = self.client.post('/api/v1/patients/', NEW_PATIENT, format='json')
+    def test_generated_credentials_returned_to_admin(self):
+        r = self.client.post('/api/v1/patients/', NEW_PATIENT, format='json')
         self.assertEqual(r.status_code, 201, r.data)
-        self.assertFalse(r.data['email_sent'])
         self.assertTrue(r.data['generated_username'])
         self.assertTrue(r.data['generated_password'])
 
-    def test_credentials_not_returned_when_email_sent(self):
-        r = self.client.post('/api/v1/patients/', NEW_PATIENT, format='json')
-        self.assertTrue(r.data['email_sent'])
+    def test_admin_chosen_password_not_returned(self):
+        r = self.client.post('/api/v1/patients/', {**NEW_PATIENT, 'password': 'Chosen-Pass-2026'}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertTrue(r.data['generated_username'])
         self.assertNotIn('generated_password', r.data)
 
     def test_all_clinical_fields_exposed(self):

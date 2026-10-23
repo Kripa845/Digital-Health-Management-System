@@ -86,7 +86,7 @@ describe('AdminPatients — patient ID typed by the admin', () => {
     expect(sent!.get('patient_id')).toBe('PAT-79028232')
   }, 20000)
 
-  it('shows the server "already exists" error under the field, then opens the QR after create', async () => {
+  it('shows the server "already exists" error under the field, then the login details and the QR after create', async () => {
     let attempts = 0
     let sent: FormData | null = null
     server.use(http.post(`${API}/patients/`, async ({ request }) => {
@@ -95,7 +95,10 @@ describe('AdminPatients — patient ID typed by the admin', () => {
       if (attempts === 1) {
         return HttpResponse.json({ patient_id: ['A patient with ID PAT-AB12CD34 already exists.'] }, { status: 400 })
       }
-      return HttpResponse.json({ success: true, email_sent: true, message: 'Patient registered.', patient: created }, { status: 201 })
+      return HttpResponse.json({
+        success: true, message: 'Patient registered. Give the login details to the user.', patient: created,
+        generated_username: 'sunita.maharjan', generated_password: 'Tmp4Pass9x',
+      }, { status: 201 })
     }))
 
     const user = userEvent.setup()
@@ -109,6 +112,13 @@ describe('AdminPatients — patient ID typed by the admin', () => {
     expect(sent!.get('patient_id')).toBe('PAT-AB12CD34')
 
     await user.click(screen.getByRole('button', { name: 'Register patient' }))
+    // The admin sees the login details to hand over first, then the QR card.
+    const creds = await screen.findByRole('dialog', { name: 'Account credentials generated' })
+    expect(within(creds).getByText('sunita.maharjan')).toBeInTheDocument()
+    expect(within(creds).getByText('Tmp4Pass9x')).toBeInTheDocument()
+    expect(within(creds).queryByText(/email/i)).not.toBeInTheDocument()
+    await user.click(within(creds).getByRole('button', { name: 'Done' }))
+
     const dialog = await screen.findByRole('dialog', { name: 'Health card QR' })
     const qr = dialog.querySelector('svg[data-link]')!
     // The QR encodes the configured site address and the uuid token, never the patient ID.

@@ -1,10 +1,22 @@
+"""Seed demo data: an admin, 6 doctors, 10 patients and their records.
 
+    python manage.py seed_demo
+
+Passwords default to the public demo ones below. On a database that is not on this
+computer (e.g. Neon), set your own first; the command refuses the defaults there:
+
+    SEED_ADMIN_PASSWORD, SEED_DOCTOR_PASSWORD, SEED_PATIENT_PASSWORD
+
+An existing "admin" account (e.g. the one created from DJANGO_ADMIN_USERNAME) is
+kept with its password; only the demo doctors and patients are replaced on a rerun.
+"""
 import datetime as dt
+import os
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.core.files.base import ContentFile
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.patients.models import Patient
@@ -26,6 +38,7 @@ ADMIN = {
 
 DOCTOR_PASSWORD = 'doctor12345'
 PATIENT_PASSWORD = 'patient12345'
+LOCAL_HOSTS = ('', 'localhost', '127.0.0.1', '::1')
 
 # ---------------------------------------------------------------------------
 # Doctors — username, name, department, specialization, gender, dob, phone
@@ -182,9 +195,15 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        existing_admin = User.objects.filter(username=ADMIN['username']).first()
+        self.admin_password = os.environ.get('SEED_ADMIN_PASSWORD') or ADMIN['password']
+        self.doctor_password = os.environ.get('SEED_DOCTOR_PASSWORD') or DOCTOR_PASSWORD
+        self.patient_password = os.environ.get('SEED_PATIENT_PASSWORD') or PATIENT_PASSWORD
+        self._refuse_public_passwords_on_remote_db(creating_admin=existing_admin is None)
+
         self._wipe_previous()
 
-        admin = self._create_admin()
+        admin = self._use_admin(existing_admin) if existing_admin else self._create_admin()
         doctors = self._create_doctors()
         patients = self._create_patients()
         self._create_assignments(doctors, patients)
@@ -196,9 +215,27 @@ class Command(BaseCommand):
 
         self._print_credentials(admin, doctors, patients)
 
+    # -- safety ------------------------------------------------------------
+    def _refuse_public_passwords_on_remote_db(self, creating_admin):
+        """The default passwords are in the public repository: never put them on a live database."""
+        db = connection.settings_dict
+        if db['ENGINE'].endswith('sqlite3') or db.get('HOST', '') in LOCAL_HOSTS:
+            return
+        public = [name for name, value, default in (
+            ('SEED_DOCTOR_PASSWORD', self.doctor_password, DOCTOR_PASSWORD),
+            ('SEED_PATIENT_PASSWORD', self.patient_password, PATIENT_PASSWORD),
+            ('SEED_ADMIN_PASSWORD', self.admin_password if creating_admin else None, ADMIN['password']),
+        ) if value == default]
+        if public:
+            raise CommandError(
+                f"This database is not on this computer ({db.get('HOST')}), so the public demo passwords "
+                f"are refused. Set {', '.join(public)} first. Nothing was changed."
+            )
+
     # -- teardown ----------------------------------------------------------
     def _wipe_previous(self):
-        usernames = [ADMIN['username']] + [d['username'] for d in DOCTORS] + [p['username'] for p in PATIENTS]
+        # The admin is never deleted: it may be the real admin of this database.
+        usernames = [d['username'] for d in DOCTORS] + [p['username'] for p in PATIENTS]
         qs = User.objects.filter(username__in=usernames)
         count = qs.count()
         if count:
@@ -206,11 +243,18 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f'Removed {count} previously seeded demo user(s).'))
 
     # -- creators ----------------------------------------------------------
+    def _use_admin(self, user):
+        if user.role != User.Role.ADMIN:
+            raise CommandError(f"User '{user.username}' exists but is not an admin. Nothing was changed.")
+        self.admin_password = None   # kept as it is
+        self.stdout.write(self.style.SUCCESS(f'Using existing admin: {user.username} (password unchanged)'))
+        return user
+
     def _create_admin(self):
         admin = User.objects.create_user(
             username=ADMIN['username'],
             email=ADMIN['email'],
-            password=ADMIN['password'],
+            password=self.admin_password,
             first_name=ADMIN['first_name'],
             last_name=ADMIN['last_name'],
             role=User.Role.ADMIN,
@@ -227,7 +271,7 @@ class Command(BaseCommand):
             user = User.objects.create_user(
                 username=d['username'],
                 email=f"{d['username']}@merocare.local",
-                password=DOCTOR_PASSWORD,
+                password=self.doctor_password,
                 first_name=d['first_name'],
                 last_name=d['last_name'],
                 role=User.Role.DOCTOR,
@@ -255,7 +299,7 @@ class Command(BaseCommand):
             user = User.objects.create_user(
                 username=p['username'],
                 email=p['email'],
-                password=PATIENT_PASSWORD,
+                password=self.patient_password,
                 first_name=p['first_name'],
                 last_name=p['last_name'],
                 role=User.Role.PATIENT,
@@ -431,15 +475,16 @@ class Command(BaseCommand):
         self.stdout.write(header)
         self.stdout.write('  ' + '-' * 74)
 
-        self.stdout.write(f'  {"ADMIN":<9} {admin.username:<20} {ADMIN["password"]:<15} {"System Administrator":<28}')
+        admin_password = self.admin_password or '(unchanged)'
+        self.stdout.write(f'  {"ADMIN":<9} {admin.username:<20} {admin_password:<15} {"System Administrator":<28}')
 
         for d in doctors:
             name = f'Dr. {d.user.first_name} {d.user.last_name} - {d.department}'
-            self.stdout.write(f'  {"DOCTOR":<9} {d.user.username:<20} {DOCTOR_PASSWORD:<15} {name:<28}')
+            self.stdout.write(f'  {"DOCTOR":<9} {d.user.username:<20} {self.doctor_password:<15} {name:<28}')
 
         for p in patients:
             name = f'{p.first_name} {p.last_name} ({p.blood_group})'
-            self.stdout.write(f'  {"PATIENT":<9} {p.user.username:<20} {PATIENT_PASSWORD:<15} {name:<28}')
+            self.stdout.write(f'  {"PATIENT":<9} {p.user.username:<20} {self.patient_password:<15} {name:<28}')
 
         self.stdout.write(line)
         self.stdout.write(f'  Doctors: {len(doctors)}   Patients: {len(patients)}   '

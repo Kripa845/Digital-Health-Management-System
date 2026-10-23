@@ -18,3 +18,17 @@ def generate_password(length: int = 10) -> str:
             and any(c.isdigit() for c in pwd)
         ):
             return pwd
+
+
+def account_created_response(label, username, password, password_was_generated):
+    """API response for a new account. The admin hands the login details to the user:
+    the username always, the password only when it was generated (an admin-chosen
+    password is already known to the admin)."""
+    data = {
+        'success': True,
+        'message': f"{label} registered. Give the login details to the user.",
+        'generated_username': username,
+    }
+    if password_was_generated:
+        data['generated_password'] = password
+    return data

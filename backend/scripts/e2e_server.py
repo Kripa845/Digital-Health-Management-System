@@ -22,7 +22,6 @@ env.update({
     'ALLOWED_HOSTS': '127.0.0.1,localhost',
     'CORS_ALLOWED_ORIGINS': '',
     'DJANGO_ADMIN_PASSWORD': '',          # don't create the .env admin in the test database
-    'EMAIL_BACKEND': 'django.core.mail.backends.locmem.EmailBackend',
     'LAB_UPLOAD_THROTTLE_RATE': '1000/hour',
 })
 

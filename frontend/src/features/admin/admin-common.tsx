@@ -47,8 +47,8 @@ export interface GeneratedCreds { name: string; username: string; password: stri
 
 // ── One-time credentials reveal dialog (shown after create) ───────────
 export function CredentialsDialog({
-  creds, onClose, emailed = true,
-}: { creds: GeneratedCreds | null; onClose: () => void; emailed?: boolean }) {
+  creds, onClose,
+}: { creds: GeneratedCreds | null; onClose: () => void }) {
   return (
     <Dialog open={!!creds} onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent>
@@ -58,10 +58,7 @@ export function CredentialsDialog({
           </div>
           <DialogTitle>Account credentials generated</DialogTitle>
           <DialogDescription>
-            Login details for {creds?.name}. These are shown once, so copy them now.{' '}
-            {emailed
-              ? 'A copy has also been emailed to the registered address.'
-              : 'The welcome email could not be sent, so give these details to the user yourself.'}
+            Login details for {creds?.name}. These are shown once, so copy them now and give them to the user.
           </DialogDescription>
         </DialogHeader>
         {creds && (

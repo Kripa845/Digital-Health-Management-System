@@ -168,7 +168,7 @@ function DoctorFormDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   doctor: Doctor | null
-  /** Called when the welcome email failed and the admin must hand over the login details. */
+  /** Called after a new doctor is registered, with the login details for the admin to hand over. */
   onCredentials?: (creds: GeneratedCreds) => void
 }) {
   const qc = useQueryClient()
@@ -209,15 +209,15 @@ function DoctorFormDialog({
       onOpenChange(false)
       if (isEdit) {
         toast.success('Doctor updated.')
-      } else if (data.generated_username) {
-        toast.warning(data.message || 'Doctor registered, but the welcome email could not be sent.')
-        onCredentials?.({
-          name: `Dr. ${form.first_name} ${form.last_name}`.trim(),
-          username: data.generated_username,
-          password: data.generated_password ?? '',
-        })
       } else {
         toast.success(data.message || 'Doctor registered.')
+        if (data.generated_username) {
+          onCredentials?.({
+            name: `Dr. ${form.first_name} ${form.last_name}`.trim(),
+            username: data.generated_username,
+            password: data.generated_password ?? '',
+          })
+        }
       }
     },
     onError: (err) => toast.error(apiError(err, 'Could not save doctor.')),
@@ -570,7 +570,7 @@ export function AdminDoctors() {
 
       {/* Dialogs */}
       <DoctorFormDialog open={addOpen} onOpenChange={setAddOpen} doctor={null} onCredentials={setCreds} />
-      <CredentialsDialog creds={creds} onClose={() => setCreds(null)} emailed={false} />
+      <CredentialsDialog creds={creds} onClose={() => setCreds(null)} />
       <DoctorFormDialog open={!!editDoctor} onOpenChange={(o) => { if (!o) setEditDoctor(null) }} doctor={editDoctor} />
       <AssignmentsDialog doctor={assignDoctor} onClose={() => setAssignDoctor(null)} />
       <DoctorDetailsDialog doctor={viewDoctor} onClose={() => setViewDoctor(null)}

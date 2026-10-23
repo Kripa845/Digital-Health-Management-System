@@ -115,9 +115,8 @@ and full light/dark theming (system-aware, with a manual toggle). Components liv
 ## Security notes
 - **Sessions:** JWT with rotating refresh tokens. Logging out revokes the refresh token on the server.
   Login attempts are rate limited (`LOGIN_THROTTLE_RATE`, default 10 per minute per IP).
-- **New accounts:** login details are emailed to the new user (SMTP settings in `.env`). If the email
-  cannot be sent, the admin is shown the details once to hand over in person. Every user must change
-  the password on first sign-in.
+- **New accounts:** no email is sent. After creating an account the admin is shown the login details
+  once, to hand over in person. Every user must change the password on first sign-in.
 - **Doctor access:** a doctor sees a patient's medical record, documents, lab reports and their own
   prescriptions only with an active assignment **and** an approved access request
   (`apps/doctors/access.py`). An admin assigning a doctor counts as approval.
@@ -212,7 +211,7 @@ upload → file checks → OCR → extract values → identity gate → preview 
 | `LAB_LLM_FALLBACK` | `False` | Send page images of reports that text and OCR could not read to Anthropic (Claude). **Patient data leaves the server** when used. |
 | `ANTHROPIC_API_KEY` | empty | API key for the AI fallback (never put it in code) |
 | `LAB_LLM_MODEL`, `LAB_LLM_TIMEOUT` | `claude-opus-5-5`, `45` | Model and timeout (seconds) for the AI fallback |
-| `MEDIA_ROOT`, `EMAIL_BACKEND` | Django defaults | Overridable (used by the end-to-end test server) |
+| `MEDIA_ROOT` | `backend/media` | Overridable (used by the end-to-end test server) |
 
 Digital PDFs need nothing extra. Scanned PDFs and photos need **Tesseract**, or the AI fallback. Poppler is
 no longer needed: PDFs are opened and rendered with PyMuPDF.

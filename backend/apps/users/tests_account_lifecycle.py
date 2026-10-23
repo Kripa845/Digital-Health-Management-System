@@ -1,10 +1,7 @@
 """End to end: an account an admin creates (or resets) can sign in, change its
 password and load its own dashboard, exactly as the frontend does it."""
 import json
-import re
-from unittest.mock import patch
 
-from django.core import mail
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -39,11 +36,7 @@ DOCTOR_DASHBOARD = ['patients/', 'appointments/', 'appointments/doctor/', 'presc
 NEW_PASSWORD = 'Kathmandu-Valley-2026'
 
 
-@override_settings(
-    SECURE_SSL_REDIRECT=False,
-    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
-    FRONTEND_URL='http://localhost:5173',
-)
+@override_settings(SECURE_SSL_REDIRECT=False)
 class AdminCreatedAccountSignInTests(TestCase):
     def setUp(self):
         cache.clear()  # login rate limit
@@ -52,13 +45,11 @@ class AdminCreatedAccountSignInTests(TestCase):
 
     # ── helpers ──────────────────────────────────────────────────────────
 
-    def _credentials_from_email(self):
-        self.assertEqual(len(mail.outbox), 1, 'expected one welcome email')
-        body = mail.outbox[0].body
-        username = re.search(r'Username:\n(\S+)', body).group(1)
-        password = re.search(r'Temporary Password:\n(\S+)', body).group(1)
-        self.assertIn('http://localhost:5173/login', body)
-        return username, password
+    def _create(self, kind, form):
+        """Create an account as the admin page does; returns the login details shown to the admin."""
+        r = self.admin.post(f'/api/v1/{kind}/', form, format='multipart')
+        self.assertEqual(r.status_code, 201, r.data)
+        return r.data['generated_username'], r.data['generated_password']
 
     def _login(self, username, password):
         return APIClient().post('/api/v1/auth/login/', {'username': username, 'password': password}, format='json')
@@ -92,45 +83,18 @@ class AdminCreatedAccountSignInTests(TestCase):
 
     # ── tests ────────────────────────────────────────────────────────────
 
-    def test_patient_signs_in_with_emailed_credentials(self):
-        r = self.admin.post('/api/v1/patients/', PATIENT_FORM, format='multipart')
-        self.assertEqual(r.status_code, 201, r.data)
-        self.assertTrue(r.data['email_sent'])
-        username, password = self._credentials_from_email()
+    def test_patient_signs_in_with_credentials_shown_to_admin(self):
+        username, password = self._create('patients', PATIENT_FORM)
         self._sign_in_and_reach_dashboard(username, password, 'PATIENT', 'patient_profile', PATIENT_DASHBOARD)
 
-    def test_doctor_signs_in_with_emailed_credentials(self):
-        r = self.admin.post('/api/v1/doctors/', DOCTOR_FORM, format='multipart')
-        self.assertEqual(r.status_code, 201, r.data)
-        self.assertTrue(r.data['email_sent'])
-        username, password = self._credentials_from_email()
+    def test_doctor_signs_in_with_credentials_shown_to_admin(self):
+        username, password = self._create('doctors', DOCTOR_FORM)
         self.assertTrue(username.startswith('dr.'))
         self._sign_in_and_reach_dashboard(username, password, 'DOCTOR', 'doctor_profile', DOCTOR_DASHBOARD)
 
-    def test_patient_signs_in_with_credentials_shown_to_admin(self):
-        with patch('apps.users.email_service.send_mail', side_effect=OSError('SMTP down')):
-            r = self.admin.post('/api/v1/patients/', PATIENT_FORM, format='multipart')
-        self.assertEqual(r.status_code, 201, r.data)
-        self._sign_in_and_reach_dashboard(
-            r.data['generated_username'], r.data['generated_password'],
-            'PATIENT', 'patient_profile', PATIENT_DASHBOARD,
-        )
-
-    def test_doctor_signs_in_with_credentials_shown_to_admin(self):
-        with patch('apps.users.email_service.send_mail', side_effect=OSError('SMTP down')):
-            r = self.admin.post('/api/v1/doctors/', DOCTOR_FORM, format='multipart')
-        self.assertEqual(r.status_code, 201, r.data)
-        self._sign_in_and_reach_dashboard(
-            r.data['generated_username'], r.data['generated_password'],
-            'DOCTOR', 'doctor_profile', DOCTOR_DASHBOARD,
-        )
-
     def test_reset_passwords_work_for_patient_and_doctor(self):
-        self.admin.post('/api/v1/patients/', PATIENT_FORM, format='multipart')
-        patient_username, _ = self._credentials_from_email()
-        mail.outbox.clear()
-        self.admin.post('/api/v1/doctors/', DOCTOR_FORM, format='multipart')
-        doctor_username, _ = self._credentials_from_email()
+        patient_username, _ = self._create('patients', PATIENT_FORM)
+        doctor_username, _ = self._create('doctors', DOCTOR_FORM)
 
         from apps.users.models import User
         for username, kind, role, profile, endpoints in (
@@ -144,9 +108,7 @@ class AdminCreatedAccountSignInTests(TestCase):
             self._sign_in_and_reach_dashboard(username, r.data['new_password'], role, profile, endpoints)
 
     def test_rejected_new_password_is_explained(self):
-        with patch('apps.users.email_service.send_mail', side_effect=OSError('SMTP down')):
-            r = self.admin.post('/api/v1/patients/', PATIENT_FORM, format='multipart')
-        username, password = r.data['generated_username'], r.data['generated_password']
+        username, password = self._create('patients', PATIENT_FORM)
         token = self._login(username, password).data['access']
         user = APIClient()
         user.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')

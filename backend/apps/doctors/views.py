@@ -20,8 +20,7 @@ from apps.doctors.serializers import (
 from apps.patients.models import Patient
 from apps.notifications.models import Notification
 from apps.users.permissions import IsAdmin, IsDoctor, IsPatient, IsAdminOrSelfDoctor, IsDoctorOrAdmin
-from apps.users.credentials import generate_password
-from apps.users.email_service import account_created_response
+from apps.users.credentials import account_created_response, generate_password
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,8 +93,6 @@ class DoctorViewSet(viewsets.ModelViewSet):
         return Response(
             account_created_response(
                 label='Doctor',
-                email=doctor.email or doctor.user.email or '',
-                full_name=f"Dr. {doctor.user.first_name} {doctor.user.last_name}".strip(),
                 username=doctor._generated_username,
                 password=doctor._generated_password,
                 password_was_generated=doctor._generated_password != '[PROVIDED]',

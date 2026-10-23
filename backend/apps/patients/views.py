@@ -16,9 +16,8 @@ from apps.notifications.models import Notification
 from apps.documents.models import Document
 from apps.documents.serializers import DocumentSerializer
 from apps.doctors.access import doctor_access_filters, doctor_can_access
-from apps.users.credentials import generate_password
+from apps.users.credentials import account_created_response, generate_password
 from apps.users.permissions import IsAdmin, IsPatient
-from apps.users.email_service import account_created_response
 import logging
 
 logger = logging.getLogger(__name__)
@@ -81,11 +80,8 @@ class PatientViewSet(viewsets.ModelViewSet):
             request,
         )
 
-        full_name = " ".join(filter(None, [patient.first_name, patient.middle_name, patient.last_name]))
         data = account_created_response(
             label='Patient',
-            email=patient.email or patient.user.email or '',
-            full_name=full_name,
             username=patient._generated_username,
             password=patient._generated_password,
             password_was_generated=patient._generated_password != '[PROVIDED]',

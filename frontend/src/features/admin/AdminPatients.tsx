@@ -114,10 +114,7 @@ function PatientFormDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   patient: Patient | null
-  /**
-   * Called after a new patient is registered, with the login details when the
-   * welcome email failed and the admin must hand them over.
-   */
+  /** Called after a new patient is registered, with the login details for the admin to hand over. */
   onCreated?: (patient: Patient, creds: GeneratedCreds | null) => void
 }) {
   const qc = useQueryClient()
@@ -159,17 +156,14 @@ function PatientFormDialog({
         toast.success('Patient updated.')
         return
       }
-      let creds: GeneratedCreds | null = null
-      if (data.generated_username) {
-        toast.warning(data.message || 'Patient registered, but the welcome email could not be sent.')
-        creds = {
-          name: `${form.first_name} ${form.last_name}`.trim(),
-          username: data.generated_username,
-          password: data.generated_password ?? '',
-        }
-      } else {
-        toast.success(data.message || 'Patient registered.')
-      }
+      toast.success(data.message || 'Patient registered.')
+      const creds: GeneratedCreds | null = data.generated_username
+        ? {
+            name: `${form.first_name} ${form.last_name}`.trim(),
+            username: data.generated_username,
+            password: data.generated_password ?? '',
+          }
+        : null
       if (data.patient) onCreated?.(data.patient as Patient, creds)
     },
     onError: (err) => {
@@ -579,7 +573,6 @@ export function AdminPatients() {
       <CredentialsDialog
         creds={creds}
         onClose={() => { setCreds(null); if (pendingQr) { setQrPatient(pendingQr); setPendingQr(null) } }}
-        emailed={false}
       />
       <PatientFormDialog open={!!editPatient} onOpenChange={(o) => { if (!o) setEditPatient(null) }} patient={editPatient} />
       <QrDialog patient={qrPatient} onClose={() => setQrPatient(null)} />

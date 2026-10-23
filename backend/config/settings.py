@@ -180,9 +180,6 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# Frontend URL
-FRONTEND_URL = os.environ.get('FRONTEND_URL', '').rstrip('/')
-
 # CORS
 _cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if _cors_origins:
@@ -293,16 +290,4 @@ LAB_LLM_TIMEOUT = float(os.environ.get('LAB_LLM_TIMEOUT', '45'))
 
 # Misc
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# Email Settings
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'merocarecard@gmail.com')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
-# Without a timeout an unreachable SMTP server blocks account creation forever;
-# after it, the admin is shown the new login details instead.
-EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 15))
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Mero Care Card <merocarecard@gmail.com>')
 
