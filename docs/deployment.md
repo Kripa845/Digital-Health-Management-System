@@ -27,10 +27,10 @@ Do the steps in order: later steps need addresses from earlier ones.
 ## 1. Database — Neon
 
 1. Sign up at <https://neon.tech> and create a project. Its region must match the backend's
-   `region` in `render.yaml` (currently `virginia`, for Neon's **AWS US East 1 (N. Virginia)**);
+   `region` in `render.yaml` (currently `ohio`, for Neon's **AWS US East 2 (Ohio)**);
    neither can be changed later.
 2. Click **Connect**, turn **off** "Connection pooling" (the host must not contain `-pooler`), and copy the connection string, e.g.
-   `postgresql://user:password@ep-xxxx.us-east-1.aws.neon.tech/neondb?sslmode=require`.
+   `postgresql://user:password@ep-xxxx.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require`.
    This is your **`DATABASE_URL`**. Keep it secret.
 
 Tables are created automatically: the backend runs `migrate` every time it starts.
@@ -64,7 +64,7 @@ Sign up at <https://cloudinary.com>. From the dashboard copy **Cloud name**, **A
 
 1. Sign in at <https://render.com> with GitHub.
 2. **New → Blueprint** → choose the `Digital-Health-Management-System` repo. Render reads
-   `render.yaml` and shows one service, `merocarecard-api` (free, Virginia, Docker, `backend/`).
+   `render.yaml` and shows one service, `merocarecard-api` (free, Ohio, Docker, `backend/`).
 3. Fill in the values it asks for:
 
    | Key | Value |

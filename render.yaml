@@ -5,7 +5,7 @@ services:
     name: merocarecard-api
     runtime: docker
     plan: free
-    region: virginia   # same region as the Neon database (us-east-1); cannot be changed later
+    region: ohio   # same region as the Neon database (us-east-2); cannot be changed later
     rootDir: backend
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
