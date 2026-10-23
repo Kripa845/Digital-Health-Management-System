@@ -9,6 +9,12 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url))
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Patients' and doctors' phones are often not up to date: older iPhones (Safari before
+  // 16.4) cannot parse class static blocks and showed a blank page. Translate newer syntax
+  // down for them; Array.prototype.at is polyfilled in main.tsx.
+  build: {
+    target: ['es2020', 'safari15', 'chrome87', 'firefox78', 'edge88'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(rootDir, './src'),
